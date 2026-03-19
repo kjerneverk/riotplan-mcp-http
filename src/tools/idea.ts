@@ -9,6 +9,7 @@ import { readFile, writeFile, mkdir, readdir, stat } from "node:fs/promises";
 import { assertNoClientDirectoryOverride, formatTimestamp, resolveDirectory } from "./shared.js";
 import { logEvent } from "./history.js";
 import type { EvidenceType } from "@kjerneverk/riotplan";
+import { readIdeaDoc, saveIdeaDoc } from "@kjerneverk/riotplan";
 import {
     createSqliteProvider,
     formatPlanFilename,
@@ -93,40 +94,20 @@ function appendBulletToSection(content: string, sectionHeading: string, bullet: 
     return `${content.slice(0, insertPoint)}- ${bullet}\n${content.slice(insertPoint)}`;
 }
 
-async function readTypedFileFromSqlite(planPath: string, fileType: PlanFileType): Promise<PlanFile | null> {
-    const provider = createSqliteProvider(planPath);
-    const filesResult = await provider.getFiles();
-    await provider.close();
-    if (!filesResult.success || !filesResult.data) {
-        return null;
-    }
-
-    const matches = filesResult.data
-        .filter((file) => file.type === fileType)
-        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-    return matches[0] || null;
+async function readTypedFileFromSqlite(planPath: string, _fileType: PlanFileType): Promise<PlanFile | null> {
+    const doc = await readIdeaDoc(planPath);
+    if (!doc) return null;
+    const now = formatTimestamp();
+    return { type: 'idea', filename: doc.filename, content: doc.content, createdAt: now, updatedAt: now } as PlanFile;
 }
 
 async function saveTypedFileToSqlite(
     planPath: string,
-    fileType: PlanFileType,
-    filename: string,
+    _fileType: PlanFileType,
+    _filename: string,
     content: string
 ): Promise<void> {
-    const existing = await readTypedFileFromSqlite(planPath, fileType);
-    const now = formatTimestamp();
-    const provider = createSqliteProvider(planPath);
-    const saveResult = await provider.saveFile({
-        type: fileType,
-        filename: existing?.filename || filename,
-        content,
-        createdAt: existing?.createdAt || now,
-        updatedAt: now,
-    });
-    await provider.close();
-    if (!saveResult.success) {
-        throw new Error(saveResult.error || `Failed saving ${fileType} file`);
-    }
+    await saveIdeaDoc(planPath, content);
 }
 
 async function addTimelineEventToSqlite(
@@ -134,17 +115,11 @@ async function addTimelineEventToSqlite(
     type: string,
     data: Record<string, unknown>
 ): Promise<void> {
-    const provider = createSqliteProvider(planPath);
-    const result = await provider.addTimelineEvent({
-        id: randomUUID(),
+    await logEvent(planPath, {
         timestamp: formatTimestamp(),
         type: type as any,
         data,
     });
-    await provider.close();
-    if (!result.success) {
-        throw new Error(result.error || "Failed to add timeline event");
-    }
 }
 
 /**

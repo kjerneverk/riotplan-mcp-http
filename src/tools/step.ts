@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveDirectory, formatError, createSuccess, ensurePlanManifest } from './shared.js';
 import { loadPlan } from '@kjerneverk/riotplan/plan/loader';
-import { startStep, completeStep, insertStep, removeStep, moveStep } from '@kjerneverk/riotplan';
+import { startStep, completeStep, insertStep, removeStep, moveStep, saveStatusDoc } from '@kjerneverk/riotplan';
 import { generateStatus } from '@kjerneverk/riotplan/status/generator';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -412,64 +412,8 @@ async function executeStepAdd(
 ): Promise<ToolResult> {
     try {
         const planPath = resolveDirectory(args, context);
-        if (planPath.endsWith('.plan')) {
-            const provider = createSqliteProvider(planPath);
-            try {
-                const [metadataResult, stepsResult] = await Promise.all([
-                    provider.getMetadata(),
-                    provider.getSteps(),
-                ]);
-                if (!metadataResult.success || !metadataResult.data) {
-                    throw new Error(metadataResult.error || 'Failed to read plan metadata');
-                }
-                if (!stepsResult.success || !stepsResult.data) {
-                    throw new Error(stepsResult.error || 'Failed to read steps');
-                }
-
-                const sorted = [...stepsResult.data].sort((a, b) => a.number - b.number);
-                const requestedPosition = args.number ?? (args.after ? args.after + 1 : sorted.length + 1);
-                if (requestedPosition < 1 || requestedPosition > sorted.length + 1) {
-                    throw new Error(`Invalid insertion position: ${requestedPosition}`);
-                }
-
-                const inserted = {
-                    number: requestedPosition,
-                    code: args.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || `step-${requestedPosition}`,
-                    title: args.title,
-                    description: args.title,
-                    status: 'pending' as const,
-                    content: buildStepContent(requestedPosition, args.title),
-                };
-
-                const combined = [
-                    ...sorted.slice(0, requestedPosition - 1),
-                    inserted,
-                    ...sorted.slice(requestedPosition - 1),
-                ].map((step, index) => ({
-                    ...step,
-                    number: index + 1,
-                    content: step.content || buildStepContent(index + 1, step.title),
-                }));
-
-                await rewriteSqliteSteps(provider, combined);
-                await saveSqliteStatusArtifact(provider, metadataResult.data.name);
-
-                return createSuccess(
-                    {
-                        planId: metadataResult.data.id,
-                        step: requestedPosition,
-                        file: `${requestedPosition.toString().padStart(2, '0')}-${args.title.toLowerCase().replace(/\s+/g, '-')}.md`,
-                        renamedFiles: [],
-                    },
-                    `Step "${args.title}" added as step ${requestedPosition}`
-                );
-            } finally {
-                await provider.close();
-            }
-        }
-        
         const plan = await loadPlan(planPath);
-        
+
         const result = await insertStep(plan, {
             title: args.title,
             position: args.number,
@@ -477,10 +421,16 @@ async function executeStepAdd(
             status: 'pending',
         });
 
+        if (planPath.endsWith('.plan')) {
+            const refreshed = await loadPlan(planPath);
+            const statusContent = await generateStatus(refreshed);
+            await saveStatusDoc(planPath, statusContent);
+        }
+
         return createSuccess(
-            { 
+            {
                 planId: plan.metadata.code,
-                step: result.step.number, 
+                step: result.step.number,
                 file: result.createdFile,
                 renamedFiles: result.renamedFiles,
             },
@@ -501,59 +451,19 @@ async function executeStepRemove(
 ): Promise<ToolResult> {
     try {
         const planPath = resolveDirectory(args, context);
-        if (planPath.endsWith('.plan')) {
-            const provider = createSqliteProvider(planPath);
-            try {
-                const [metadataResult, stepsResult] = await Promise.all([
-                    provider.getMetadata(),
-                    provider.getSteps(),
-                ]);
-                if (!metadataResult.success || !metadataResult.data) {
-                    throw new Error(metadataResult.error || 'Failed to read plan metadata');
-                }
-                if (!stepsResult.success || !stepsResult.data) {
-                    throw new Error(stepsResult.error || 'Failed to read steps');
-                }
-
-                const sorted = [...stepsResult.data].sort((a, b) => a.number - b.number);
-                const removed = sorted.find((step) => step.number === args.step);
-                if (!removed) {
-                    throw new Error(`Step ${args.step} not found`);
-                }
-
-                const remaining = sorted
-                    .filter((step) => step.number !== args.step)
-                    .map((step, index) => ({ ...step, number: index + 1 }));
-
-                await rewriteSqliteSteps(provider, remaining);
-                await saveSqliteStatusArtifact(provider, metadataResult.data.name);
-
-                return createSuccess(
-                    {
-                        planId: metadataResult.data.id,
-                        removedStep: args.step,
-                        removedTitle: removed.title,
-                        deletedFile: `${args.step.toString().padStart(2, '0')}-${removed.title.toLowerCase().replace(/\s+/g, '-')}.md`,
-                        renamedFiles: [],
-                    },
-                    `Step ${args.step} "${removed.title}" removed.`
-                );
-            } finally {
-                await provider.close();
-            }
-        }
-        
         const plan = await loadPlan(planPath);
-        
         const result = await removeStep(plan, args.step);
 
-        // Regenerate STATUS.md
         const updatedPlan = await loadPlan(planPath);
         const statusContent = await generateStatus(updatedPlan);
-        await writeFile(join(planPath, 'STATUS.md'), statusContent, 'utf-8');
+        if (planPath.endsWith('.plan')) {
+            await saveStatusDoc(planPath, statusContent);
+        } else {
+            await writeFile(join(planPath, 'STATUS.md'), statusContent, 'utf-8');
+        }
 
         return createSuccess(
-            { 
+            {
                 planId: plan.metadata.code,
                 removedStep: result.removedStep.number,
                 removedTitle: result.removedStep.title,
@@ -577,62 +487,19 @@ async function executeStepMove(
 ): Promise<ToolResult> {
     try {
         const planPath = resolveDirectory(args, context);
-        if (planPath.endsWith('.plan')) {
-            const provider = createSqliteProvider(planPath);
-            try {
-                const [metadataResult, stepsResult] = await Promise.all([
-                    provider.getMetadata(),
-                    provider.getSteps(),
-                ]);
-                if (!metadataResult.success || !metadataResult.data) {
-                    throw new Error(metadataResult.error || 'Failed to read plan metadata');
-                }
-                if (!stepsResult.success || !stepsResult.data) {
-                    throw new Error(stepsResult.error || 'Failed to read steps');
-                }
-
-                const sorted = [...stepsResult.data].sort((a, b) => a.number - b.number);
-                const fromIndex = sorted.findIndex((step) => step.number === args.from);
-                if (fromIndex === -1) {
-                    throw new Error(`Step ${args.from} not found`);
-                }
-                if (args.to < 1 || args.to > sorted.length) {
-                    throw new Error(`Target step position must be between 1 and ${sorted.length}`);
-                }
-
-                const [moved] = sorted.splice(fromIndex, 1);
-                sorted.splice(args.to - 1, 0, moved);
-                const reordered = sorted.map((step, index) => ({ ...step, number: index + 1 }));
-
-                await rewriteSqliteSteps(provider, reordered);
-                await saveSqliteStatusArtifact(provider, metadataResult.data.name);
-
-                return createSuccess(
-                    {
-                        planId: metadataResult.data.id,
-                        step: args.from,
-                        from: args.from,
-                        to: args.to,
-                        renamedFiles: [],
-                    },
-                    `Step moved from position ${args.from} to position ${args.to}.`
-                );
-            } finally {
-                await provider.close();
-            }
-        }
-        
         const plan = await loadPlan(planPath);
-        
         const result = await moveStep(plan, args.from, args.to);
 
-        // Regenerate STATUS.md
         const updatedPlan = await loadPlan(planPath);
         const statusContent = await generateStatus(updatedPlan);
-        await writeFile(join(planPath, 'STATUS.md'), statusContent, 'utf-8');
+        if (planPath.endsWith('.plan')) {
+            await saveStatusDoc(planPath, statusContent);
+        } else {
+            await writeFile(join(planPath, 'STATUS.md'), statusContent, 'utf-8');
+        }
 
         return createSuccess(
-            { 
+            {
                 planId: plan.metadata.code,
                 step: result.step.number,
                 from: args.from,

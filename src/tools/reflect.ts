@@ -22,6 +22,53 @@ function buildReflectionExcerpt(reflection: string, maxLength = 200): string {
 // Step Reflect Tool
 // ============================================================================
 
+async function validateStepCompleted(
+    planPath: string,
+    stepNumber: number
+): Promise<{ planId: string; error?: string }> {
+    if (planPath.endsWith('.plan')) {
+        const provider = createSqliteProvider(planPath);
+        try {
+            const [metadataResult, stepResult] = await Promise.all([
+                provider.getMetadata(),
+                provider.getStep(stepNumber),
+            ]);
+
+            if (!metadataResult.success || !metadataResult.data) {
+                throw new Error(metadataResult.error || 'Failed to read SQLite plan metadata');
+            }
+            if (!stepResult.success) {
+                throw new Error(stepResult.error || `Failed to read step ${stepNumber}`);
+            }
+            if (!stepResult.data) {
+                return { planId: metadataResult.data.id, error: `Step ${stepNumber} not found in plan` };
+            }
+            if (stepResult.data.status !== 'completed') {
+                return {
+                    planId: metadataResult.data.id,
+                    error: `Cannot reflect on step ${stepNumber} - step must be completed first (current status: ${stepResult.data.status})`,
+                };
+            }
+            return { planId: metadataResult.data.id };
+        } finally {
+            await provider.close();
+        }
+    }
+
+    const plan = await loadPlan(planPath);
+    const step = plan.steps.find(s => s.number === stepNumber);
+    if (!step) {
+        return { planId: plan.metadata.code, error: `Step ${stepNumber} not found in plan` };
+    }
+    if (step.status !== 'completed') {
+        return {
+            planId: plan.metadata.code,
+            error: `Cannot reflect on step ${stepNumber} - step must be completed first (current status: ${step.status})`,
+        };
+    }
+    return { planId: plan.metadata.code };
+}
+
 async function executeStepReflect(
     args: any,
     context: ToolExecutionContext
@@ -31,99 +78,12 @@ async function executeStepReflect(
         const now = new Date().toISOString();
         const reflectionExcerpt = buildReflectionExcerpt(args.reflection);
 
-        if (planPath.endsWith('.plan')) {
-            const provider = createSqliteProvider(planPath);
-            try {
-                const [metadataResult, stepResult] = await Promise.all([
-                    provider.getMetadata(),
-                    provider.getStep(args.step),
-                ]);
-
-                if (!metadataResult.success || !metadataResult.data) {
-                    throw new Error(metadataResult.error || 'Failed to read SQLite plan metadata');
-                }
-                if (!stepResult.success) {
-                    throw new Error(stepResult.error || `Failed to read step ${args.step}`);
-                }
-                if (!stepResult.data) {
-                    return {
-                        success: false,
-                        error: `Step ${args.step} not found in plan`,
-                    };
-                }
-                if (stepResult.data.status !== 'completed') {
-                    return {
-                        success: false,
-                        error: `Cannot reflect on step ${args.step} - step must be completed first (current status: ${stepResult.data.status})`,
-                    };
-                }
-
-                const stepNum = String(args.step).padStart(2, '0');
-                const reflectionFilename = `reflections/${stepNum}-reflection.md`;
-                const saveResult = await provider.saveFile({
-                    // Use prompt artifact storage with reflection namespaced by filename.
-                    type: 'prompt',
-                    filename: reflectionFilename,
-                    content: args.reflection,
-                    createdAt: now,
-                    updatedAt: now,
-                });
-                if (!saveResult.success) {
-                    throw new Error(
-                        `Could not persist reflection for SQLite plan: ${saveResult.error || 'unknown provider error'}`
-                    );
-                }
-
-                await logEvent(planPath, {
-                    timestamp: now,
-                    type: 'step_reflected',
-                    data: {
-                        step: args.step,
-                        reflection: reflectionExcerpt,
-                        timestamp: now,
-                        storage: 'sqlite',
-                        reflectionFile: reflectionFilename,
-                    },
-                });
-
-                return createSuccess(
-                    {
-                        planId: metadataResult.data.id,
-                        step: args.step,
-                        reflectionFile: reflectionFilename,
-                    },
-                    `Reflection for step ${args.step} saved to ${reflectionFilename}`
-                );
-            } finally {
-                await provider.close();
-            }
+        const { planId, error } = await validateStepCompleted(planPath, args.step);
+        if (error) {
+            return { success: false, error };
         }
 
-        const plan = await loadPlan(planPath);
-
-        // Validate that the step exists
-        const step = plan.steps.find(s => s.number === args.step);
-        if (!step) {
-            return {
-                success: false,
-                error: `Step ${args.step} not found in plan`,
-            };
-        }
-
-        // Validate that the step is completed
-        if (step.status !== 'completed') {
-            return {
-                success: false,
-                error: `Cannot reflect on step ${args.step} - step must be completed first (current status: ${step.status})`,
-            };
-        }
-
-        // Write the reflection file
-        const filepath = await writeStepReflection(
-            planPath,
-            args.step,
-            args.reflection
-        );
+        const reflectionFile = await writeStepReflection(planPath, args.step, args.reflection);
 
         await logEvent(planPath, {
             timestamp: now,
@@ -132,18 +92,14 @@ async function executeStepReflect(
                 step: args.step,
                 reflection: reflectionExcerpt,
                 timestamp: now,
-                storage: 'directory',
-                reflectionFile: filepath,
+                storage: planPath.endsWith('.plan') ? 'sqlite' : 'directory',
+                reflectionFile,
             },
         });
 
         return createSuccess(
-            {
-                planId: plan.metadata.code,
-                step: args.step,
-                reflectionFile: filepath,
-            },
-            `Reflection for step ${args.step} saved to ${filepath}`
+            { planId, step: args.step, reflectionFile },
+            `Reflection for step ${args.step} saved to ${reflectionFile}`
         );
     } catch (error) {
         return formatError(error);

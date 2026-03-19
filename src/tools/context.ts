@@ -12,8 +12,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveDirectory, formatError, createSuccess } from './shared.js';
 import { extractConstraints, extractQuestions, extractSelectedApproach, readEvidenceFiles, readRecentHistory } from '@kjerneverk/riotplan/ai/artifacts';
-import { createSqliteProvider, type PlanFile } from '@kjerneverk/riotplan-format';
-
+import { readIdeaDoc, readShapingDoc, readPlanDoc, readEvidenceRecords, readTimelineEvents, readPlanIdentity } from '@kjerneverk/riotplan';
 interface EvidenceFile {
     name: string;
     title: string;
@@ -44,16 +43,6 @@ interface PlanContextResult {
     lifecycle: { content: string } | null;
     constraints: string[];
     questions: string[];
-}
-
-async function getLatestFileByType(
-    files: PlanFile[],
-    type: string
-): Promise<PlanFile | null> {
-    const matches = files
-        .filter((f) => f.type === type)
-        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-    return matches[0] || null;
 }
 
 /**
@@ -210,31 +199,25 @@ async function executeReadContext(
         const depth = args.depth || 'full';
         
         if (planPath.endsWith('.plan')) {
-            const provider = createSqliteProvider(planPath);
-            const [metaResult, filesResult, evidenceResult, historyResult] = await Promise.all([
-                provider.getMetadata(),
-                provider.getFiles(),
-                provider.getEvidence(),
-                provider.getTimelineEvents({ limit: 50 }),
+            const [ideaDoc, shapingDoc, lifecycleDoc, identity, evidenceRecords, timelineEvents] = await Promise.all([
+                readIdeaDoc(planPath),
+                readShapingDoc(planPath),
+                readPlanDoc(planPath, 'lifecycle', 'LIFECYCLE.md'),
+                readPlanIdentity(planPath),
+                readEvidenceRecords(planPath),
+                readTimelineEvents(planPath, { limit: 50 }),
             ]);
 
-            const files = filesResult.success ? filesResult.data || [] : [];
-            const latestIdea = await getLatestFileByType(files, 'idea');
-            const latestShaping = await getLatestFileByType(files, 'shaping');
-            const latestLifecycle = await getLatestFileByType(files, 'lifecycle');
-            const evidenceRecords = evidenceResult.success ? evidenceResult.data || [] : [];
-            const timelineEvents = historyResult.success ? historyResult.data || [] : [];
-
             const result: PlanContextResult = {
-                planId: metaResult.success && metaResult.data ? metaResult.data.id : null,
-                stage: metaResult.success && metaResult.data ? metaResult.data.stage : null,
-                idea: latestIdea
-                    ? { content: depth === 'full' ? latestIdea.content : getPreview(latestIdea.content, 20) }
+                planId: identity.planId,
+                stage: identity.stage,
+                idea: ideaDoc
+                    ? { content: depth === 'full' ? ideaDoc.content : getPreview(ideaDoc.content, 20) }
                     : null,
-                shaping: latestShaping
+                shaping: shapingDoc
                     ? {
-                        content: depth === 'full' ? latestShaping.content : getPreview(latestShaping.content, 20),
-                        selectedApproach: extractSelectedApproachName(latestShaping.content),
+                        content: depth === 'full' ? shapingDoc.content : getPreview(shapingDoc.content, 20),
+                        selectedApproach: extractSelectedApproachName(shapingDoc.content),
                     }
                     : null,
                 evidence: {
@@ -255,14 +238,13 @@ async function executeReadContext(
                     })),
                     totalEvents: timelineEvents.length,
                 },
-                lifecycle: latestLifecycle
-                    ? { content: depth === 'full' ? latestLifecycle.content : getPreview(latestLifecycle.content, 10) }
+                lifecycle: lifecycleDoc
+                    ? { content: depth === 'full' ? lifecycleDoc.content : getPreview(lifecycleDoc.content, 10) }
                     : null,
-                constraints: latestIdea ? extractConstraints(latestIdea.content) : [],
-                questions: latestIdea ? extractQuestions(latestIdea.content) : [],
+                constraints: ideaDoc ? extractConstraints(ideaDoc.content) : [],
+                questions: ideaDoc ? extractQuestions(ideaDoc.content) : [],
             };
 
-            await provider.close();
             return createSuccess(result);
         }
 
