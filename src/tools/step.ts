@@ -4,12 +4,10 @@
 
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
-import { resolveDirectory, formatError, createSuccess, ensurePlanManifest } from './shared.js';
+import { resolveDirectory, formatError, createSuccess } from './shared.js';
 import { loadPlan } from '@kjerneverk/riotplan/plan/loader';
-import { startStep, completeStep, insertStep, removeStep, moveStep, saveStatusDoc } from '@kjerneverk/riotplan';
+import { insertStep, removeStep, moveStep, saveStatusDoc } from '@kjerneverk/riotplan';
 import { generateStatus } from '@kjerneverk/riotplan/status/generator';
-import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { createSqliteProvider } from '@kjerneverk/riotplan-format';
 
@@ -155,106 +153,78 @@ async function executeStepStart(
 ): Promise<ToolResult> {
     try {
         const planPath = resolveDirectory(args, context);
-        if (planPath.endsWith('.plan')) {
-            const provider = createSqliteProvider(planPath);
-            try {
-                const [metadataResult, stepResult] = await Promise.all([
-                    provider.getMetadata(),
-                    provider.getStep(args.step),
-                ]);
+        const provider = createSqliteProvider(planPath);
+        try {
+            const [metadataResult, stepResult] = await Promise.all([
+                provider.getMetadata(),
+                provider.getStep(args.step),
+            ]);
 
-                if (!metadataResult.success || !metadataResult.data) {
-                    throw new Error(metadataResult.error || 'Failed to read plan metadata');
-                }
-                if (!stepResult.success) {
-                    throw new Error(stepResult.error || `Failed to read step ${args.step}`);
-                }
-                if (!stepResult.data) {
-                    throw new Error(`Step ${args.step} does not exist`);
-                }
+            if (!metadataResult.success || !metadataResult.data) {
+                throw new Error(metadataResult.error || 'Failed to read plan metadata');
+            }
+            if (!stepResult.success) {
+                throw new Error(stepResult.error || `Failed to read step ${args.step}`);
+            }
+            if (!stepResult.data) {
+                throw new Error(`Step ${args.step} does not exist`);
+            }
 
-                const now = new Date().toISOString();
-                const updateResult = await provider.updateStep(args.step, {
-                    status: 'in_progress',
-                    startedAt: stepResult.data.startedAt || now,
-                });
-                if (!updateResult.success) {
-                    throw new Error(updateResult.error || `Failed to start step ${args.step}`);
-                }
+            const now = new Date().toISOString();
+            const updateResult = await provider.updateStep(args.step, {
+                status: 'in_progress',
+                startedAt: stepResult.data.startedAt || now,
+            });
+            if (!updateResult.success) {
+                throw new Error(updateResult.error || `Failed to start step ${args.step}`);
+            }
 
-                const metadataUpdateResult = await provider.updateMetadata({
-                    stage: 'executing',
+            const metadataUpdateResult = await provider.updateMetadata({
+                stage: 'executing',
+                updatedAt: now,
+            });
+            if (!metadataUpdateResult.success) {
+                throw new Error(metadataUpdateResult.error || 'Failed to update plan stage');
+            }
+
+            await provider.addTimelineEvent({
+                id: randomUUID(),
+                timestamp: now,
+                type: 'step_started',
+                data: {
+                    step: args.step,
+                    title: stepResult.data.title,
+                },
+            });
+
+            const stepsResult = await provider.getSteps();
+            if (stepsResult.success && stepsResult.data) {
+                const statusContent = generateSqliteStatusMarkdown(
+                    metadataResult.data.name,
+                    stepsResult.data.map((s) => ({
+                        number: s.number,
+                        title: s.title,
+                        status: s.status,
+                        startedAt: s.startedAt,
+                        completedAt: s.completedAt,
+                    }))
+                );
+                await provider.saveFile({
+                    type: 'status',
+                    filename: 'STATUS.md',
+                    content: statusContent,
+                    createdAt: now,
                     updatedAt: now,
                 });
-                if (!metadataUpdateResult.success) {
-                    throw new Error(metadataUpdateResult.error || 'Failed to update plan stage');
-                }
-
-                await provider.addTimelineEvent({
-                    id: randomUUID(),
-                    timestamp: now,
-                    type: 'step_started',
-                    data: {
-                        step: args.step,
-                        title: stepResult.data.title,
-                    },
-                });
-
-                const stepsResult = await provider.getSteps();
-                if (stepsResult.success && stepsResult.data) {
-                    const statusContent = generateSqliteStatusMarkdown(
-                        metadataResult.data.name,
-                        stepsResult.data.map((s) => ({
-                            number: s.number,
-                            title: s.title,
-                            status: s.status,
-                            startedAt: s.startedAt,
-                            completedAt: s.completedAt,
-                        }))
-                    );
-                    await provider.saveFile({
-                        type: 'status',
-                        filename: 'STATUS.md',
-                        content: statusContent,
-                        createdAt: now,
-                        updatedAt: now,
-                    });
-                }
-
-                return createSuccess(
-                    { planId: metadataResult.data.id, step: args.step },
-                    `Step ${args.step} marked as started`
-                );
-            } finally {
-                await provider.close();
             }
-        }
-        
-        // Ensure plan has manifest
-        await ensurePlanManifest(planPath);
-        
-        const plan = await loadPlan(planPath);
-        const updatedStep = startStep(plan, args.step);
-        
-        // Update the plan's steps array
-        const stepIndex = plan.steps.findIndex(s => s.number === args.step);
-        if (stepIndex >= 0) {
-            plan.steps[stepIndex] = updatedStep;
-        }
-        
-        // Update plan state
-        plan.state.currentStep = args.step;
-        plan.state.status = 'in_progress';
-        plan.state.lastUpdatedAt = new Date();
-        
-        // Regenerate STATUS.md
-        const statusContent = await generateStatus(plan);
-        await writeFile(join(planPath, 'STATUS.md'), statusContent, 'utf-8');
 
-        return createSuccess(
-            { planId: plan.metadata.code, step: args.step },
-            `Step ${args.step} marked as started`
-        );
+            return createSuccess(
+                { planId: metadataResult.data.id, step: args.step },
+                `Step ${args.step} marked as started`
+            );
+        } finally {
+            await provider.close();
+        }
     } catch (error) {
         return formatError(error);
     }
@@ -270,133 +240,75 @@ async function executeStepComplete(
 ): Promise<ToolResult> {
     try {
         const planPath = resolveDirectory(args, context);
-        if (planPath.endsWith('.plan')) {
-            const provider = createSqliteProvider(planPath);
-            try {
-                const [metadataResult, stepResult, allStepsResult] = await Promise.all([
-                    provider.getMetadata(),
-                    provider.getStep(args.step),
-                    provider.getSteps(),
-                ]);
-                if (!metadataResult.success || !metadataResult.data) {
-                    throw new Error(metadataResult.error || 'Failed to read plan metadata');
-                }
-                if (!stepResult.success || !stepResult.data) {
-                    throw new Error(stepResult.error || `Step ${args.step} does not exist`);
-                }
-                if (!allStepsResult.success || !allStepsResult.data) {
-                    throw new Error(allStepsResult.error || 'Failed to read plan steps');
-                }
-
-                const now = new Date().toISOString();
-                const updateResult = await provider.updateStep(args.step, {
-                    status: 'completed',
-                    completedAt: now,
-                    startedAt: stepResult.data.startedAt || now,
-                });
-                if (!updateResult.success) {
-                    throw new Error(updateResult.error || `Failed to complete step ${args.step}`);
-                }
-
-                const refreshedStepsResult = await provider.getSteps();
-                const refreshedSteps = refreshedStepsResult.success ? (refreshedStepsResult.data || []) : [];
-                const allStepsCompleted = refreshedSteps.every(
-                    (s) => s.status === 'completed' || s.status === 'skipped'
-                );
-
-                await provider.updateMetadata({
-                    stage: allStepsCompleted ? 'completed' : 'executing',
-                    updatedAt: now,
-                });
-
-                await provider.addTimelineEvent({
-                    id: randomUUID(),
-                    timestamp: now,
-                    type: 'step_completed',
-                    data: {
-                        step: args.step,
-                        title: stepResult.data.title,
-                    },
-                });
-
-                await saveSqliteStatusArtifact(provider, metadataResult.data.name);
-
-                if (allStepsCompleted) {
-                    return createSuccess(
-                        { planId: metadataResult.data.id, step: args.step, planCompleted: true },
-                        `Step ${args.step} marked as completed.\n\n` +
-                        `🎉 All steps completed! Plan execution is finished.\n\n` +
-                        `**Next: Generate Plan Retrospective**\n` +
-                        `Call \`riotplan_generate_retrospective\` to create a retrospective that captures learning from this execution.\n\n` +
-                        `**Recommendation**: Use the highest-tier model available (e.g., Claude Opus, GPT-4) for retrospective generation. ` +
-                        `Retrospectives require creative analysis and pattern recognition to produce valuable insights.`
-                    );
-                }
-
-                return createSuccess(
-                    { planId: metadataResult.data.id, step: args.step },
-                    `Step ${args.step} marked as completed`
-                );
-            } finally {
-                await provider.close();
+        const provider = createSqliteProvider(planPath);
+        try {
+            const [metadataResult, stepResult, allStepsResult] = await Promise.all([
+                provider.getMetadata(),
+                provider.getStep(args.step),
+                provider.getSteps(),
+            ]);
+            if (!metadataResult.success || !metadataResult.data) {
+                throw new Error(metadataResult.error || 'Failed to read plan metadata');
             }
-        }
-        
-        // Ensure plan has manifest
-        await ensurePlanManifest(planPath);
-        
-        const plan = await loadPlan(planPath);
-        const updatedStep = await completeStep(plan, args.step, {
-            notes: undefined,
-            force: args.force,
-            skipVerification: args.skipVerification,
-        });
-        
-        // Update the plan's steps array
-        const stepIndex = plan.steps.findIndex(s => s.number === args.step);
-        if (stepIndex >= 0) {
-            plan.steps[stepIndex] = updatedStep;
-        }
-        
-        // Update plan state
-        plan.state.lastCompletedStep = args.step;
-        plan.state.lastUpdatedAt = new Date();
-        
-        // Find next pending step or mark as completed
-        const nextPending = plan.steps.find(s => s.status === 'pending');
-        if (nextPending) {
-            plan.state.currentStep = nextPending.number;
-            plan.state.status = 'in_progress';
-        } else {
-            plan.state.status = 'completed';
-            plan.state.currentStep = undefined;
-        }
-        
-        // Regenerate STATUS.md
-        const statusContent = await generateStatus(plan);
-        await writeFile(join(planPath, 'STATUS.md'), statusContent, 'utf-8');
+            if (!stepResult.success || !stepResult.data) {
+                throw new Error(stepResult.error || `Step ${args.step} does not exist`);
+            }
+            if (!allStepsResult.success || !allStepsResult.data) {
+                throw new Error(allStepsResult.error || 'Failed to read plan steps');
+            }
 
-        // Check if all steps are now completed
-        const allStepsCompleted = plan.steps.every(
-            s => s.status === 'completed' || s.status === 'skipped'
-        );
+            const now = new Date().toISOString();
+            const updateResult = await provider.updateStep(args.step, {
+                status: 'completed',
+                completedAt: now,
+                startedAt: stepResult.data.startedAt || now,
+            });
+            if (!updateResult.success) {
+                throw new Error(updateResult.error || `Failed to complete step ${args.step}`);
+            }
 
-        if (allStepsCompleted) {
-            return createSuccess(
-                { planId: plan.metadata.code, step: args.step, planCompleted: true },
-                `Step ${args.step} marked as completed.\n\n` +
-                `🎉 All steps completed! Plan execution is finished.\n\n` +
-                `**Next: Generate Plan Retrospective**\n` +
-                `Call \`riotplan_generate_retrospective\` to create a retrospective that captures learning from this execution.\n\n` +
-                `**Recommendation**: Use the highest-tier model available (e.g., Claude Opus, GPT-4) for retrospective generation. ` +
-                `Retrospectives require creative analysis and pattern recognition to produce valuable insights.`
+            const refreshedStepsResult = await provider.getSteps();
+            const refreshedSteps = refreshedStepsResult.success ? (refreshedStepsResult.data || []) : [];
+            const allStepsCompleted = refreshedSteps.every(
+                (s) => s.status === 'completed' || s.status === 'skipped'
             );
-        }
 
-        return createSuccess(
-            { planId: plan.metadata.code, step: args.step },
-            `Step ${args.step} marked as completed`
-        );
+            await provider.updateMetadata({
+                stage: allStepsCompleted ? 'completed' : 'executing',
+                updatedAt: now,
+            });
+
+            await provider.addTimelineEvent({
+                id: randomUUID(),
+                timestamp: now,
+                type: 'step_completed',
+                data: {
+                    step: args.step,
+                    title: stepResult.data.title,
+                },
+            });
+
+            await saveSqliteStatusArtifact(provider, metadataResult.data.name);
+
+            if (allStepsCompleted) {
+                return createSuccess(
+                    { planId: metadataResult.data.id, step: args.step, planCompleted: true },
+                    `Step ${args.step} marked as completed.\n\n` +
+                    `🎉 All steps completed! Plan execution is finished.\n\n` +
+                    `**Next: Generate Plan Retrospective**\n` +
+                    `Call \`riotplan_generate_retrospective\` to create a retrospective that captures learning from this execution.\n\n` +
+                    `**Recommendation**: Use the highest-tier model available (e.g., Claude Opus, GPT-4) for retrospective generation. ` +
+                    `Retrospectives require creative analysis and pattern recognition to produce valuable insights.`
+                );
+            }
+
+            return createSuccess(
+                { planId: metadataResult.data.id, step: args.step },
+                `Step ${args.step} marked as completed`
+            );
+        } finally {
+            await provider.close();
+        }
     } catch (error) {
         return formatError(error);
     }
@@ -421,11 +333,9 @@ async function executeStepAdd(
             status: 'pending',
         });
 
-        if (planPath.endsWith('.plan')) {
-            const refreshed = await loadPlan(planPath);
-            const statusContent = await generateStatus(refreshed);
-            await saveStatusDoc(planPath, statusContent);
-        }
+        const refreshed = await loadPlan(planPath);
+        const statusContent = await generateStatus(refreshed);
+        await saveStatusDoc(planPath, statusContent);
 
         return createSuccess(
             {
@@ -456,11 +366,7 @@ async function executeStepRemove(
 
         const updatedPlan = await loadPlan(planPath);
         const statusContent = await generateStatus(updatedPlan);
-        if (planPath.endsWith('.plan')) {
-            await saveStatusDoc(planPath, statusContent);
-        } else {
-            await writeFile(join(planPath, 'STATUS.md'), statusContent, 'utf-8');
-        }
+        await saveStatusDoc(planPath, statusContent);
 
         return createSuccess(
             {
@@ -492,11 +398,7 @@ async function executeStepMove(
 
         const updatedPlan = await loadPlan(planPath);
         const statusContent = await generateStatus(updatedPlan);
-        if (planPath.endsWith('.plan')) {
-            await saveStatusDoc(planPath, statusContent);
-        } else {
-            await writeFile(join(planPath, 'STATUS.md'), statusContent, 'utf-8');
-        }
+        await saveStatusDoc(planPath, statusContent);
 
         return createSuccess(
             {

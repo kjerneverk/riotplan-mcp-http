@@ -7,12 +7,11 @@
  */
 
 import { z } from 'zod';
-import { join } from 'node:path';
-import { readFile, readdir, stat } from 'node:fs/promises';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveDirectory, formatError, createSuccess } from './shared.js';
-import { extractConstraints, extractQuestions, extractSelectedApproach, readEvidenceFiles, readRecentHistory } from '@kjerneverk/riotplan/ai/artifacts';
+import { extractConstraints, extractQuestions, extractSelectedApproach } from '@kjerneverk/riotplan/ai/artifacts';
 import { readIdeaDoc, readShapingDoc, readPlanDoc, readEvidenceRecords, readTimelineEvents, readPlanIdentity } from '@kjerneverk/riotplan';
+
 interface EvidenceFile {
     name: string;
     title: string;
@@ -46,39 +45,11 @@ interface PlanContextResult {
 }
 
 /**
- * Read a file safely, returning null if it doesn't exist
- */
-async function readFileSafe(path: string): Promise<string | null> {
-    try {
-        return await readFile(path, 'utf-8');
-    } catch {
-        return null;
-    }
-}
-
-/**
  * Extract selected approach name only (for backward compatibility with context tool)
  */
 function extractSelectedApproachName(shapingContent: string): string | null {
     const approach = extractSelectedApproach(shapingContent);
     return approach ? approach.name : null;
-}
-
-/**
- * Extract stage from LIFECYCLE.md or IDEA.md
- */
-function extractStage(lifecycleContent: string | null, ideaContent: string | null): string | null {
-    // Try LIFECYCLE.md first
-    if (lifecycleContent) {
-        const match = lifecycleContent.match(/\*\*Stage\*\*: `(\w+)`/);
-        if (match) return match[1];
-    }
-    // Fall back to IDEA.md
-    if (ideaContent) {
-        const match = ideaContent.match(/\*\*Stage\*\*: (\w+)/);
-        if (match) return match[1];
-    }
-    return null;
 }
 
 /**
@@ -115,7 +86,6 @@ function extractEvidenceTitle(name: string, content: string): string {
         return titleFromFilename(name);
     }
 
-    // Structured JSON evidence file
     if (trimmed.startsWith('{')) {
         try {
             const parsed = JSON.parse(trimmed) as { title?: string };
@@ -127,19 +97,16 @@ function extractEvidenceTitle(name: string, content: string): string {
         }
     }
 
-    // Embedded metadata block in markdown evidence
     const embeddedTitleMatch = content.match(/"title"\s*:\s*"([^"]+)"/);
     if (embeddedTitleMatch?.[1]) {
         return embeddedTitleMatch[1].trim();
     }
 
-    // Markdown heading
     const headingMatch = content.match(/^#\s+(.+)$/m);
     if (headingMatch?.[1]) {
         return headingMatch[1].trim();
     }
 
-    // First meaningful line fallback
     const firstLine = content
         .split('\n')
         .map((line) => line.trim())
@@ -151,45 +118,6 @@ function extractEvidenceTitle(name: string, content: string): string {
     return titleFromFilename(name);
 }
 
-/**
- * Read evidence files with preview formatting for context tool
- */
-async function readEvidenceFilesWithPreview(planPath: string, depth: string): Promise<{ files: EvidenceFile[]; count: number }> {
-    const includeContent = depth === 'full';
-    const evidenceFiles = await readEvidenceFiles(planPath, includeContent);
-    const evidenceDir = join(planPath, 'evidence');
-    const dotEvidenceDir = join(planPath, '.evidence');
-    const filesInEvidenceDir = await readdir(evidenceDir).catch(() => [] as string[]);
-    const filesInDotEvidenceDir = filesInEvidenceDir.length === 0
-        ? await readdir(dotEvidenceDir).catch(() => [] as string[])
-        : [];
-    const activeDir = filesInEvidenceDir.length > 0 ? evidenceDir : dotEvidenceDir;
-    const knownFiles = new Set([...filesInEvidenceDir, ...filesInDotEvidenceDir]);
-
-    const filesWithPreview: EvidenceFile[] = await Promise.all(
-        evidenceFiles.map(async (file) => {
-            let createdAt: string | undefined;
-            if (knownFiles.has(file.name)) {
-                const stats = await stat(join(activeDir, file.name)).catch(() => null);
-                if (stats) {
-                    createdAt = stats.mtime.toISOString();
-                }
-            }
-
-            const previewSource = file.content || '';
-            return {
-                name: file.name,
-                title: extractEvidenceTitle(file.name, previewSource),
-                preview: includeContent ? getPreview(previewSource, 10) : '',
-                size: file.size,
-                createdAt,
-            };
-        })
-    );
-    
-    return { files: filesWithPreview, count: filesWithPreview.length };
-}
-
 async function executeReadContext(
     args: any,
     context: ToolExecutionContext
@@ -198,81 +126,52 @@ async function executeReadContext(
         const planPath = resolveDirectory(args, context);
         const depth = args.depth || 'full';
         
-        if (planPath.endsWith('.plan')) {
-            const [ideaDoc, shapingDoc, lifecycleDoc, identity, evidenceRecords, timelineEvents] = await Promise.all([
-                readIdeaDoc(planPath),
-                readShapingDoc(planPath),
-                readPlanDoc(planPath, 'lifecycle', 'LIFECYCLE.md'),
-                readPlanIdentity(planPath),
-                readEvidenceRecords(planPath),
-                readTimelineEvents(planPath, { limit: 50 }),
-            ]);
-
-            const result: PlanContextResult = {
-                planId: identity.planId,
-                stage: identity.stage,
-                idea: ideaDoc
-                    ? { content: depth === 'full' ? ideaDoc.content : getPreview(ideaDoc.content, 20) }
-                    : null,
-                shaping: shapingDoc
-                    ? {
-                        content: depth === 'full' ? shapingDoc.content : getPreview(shapingDoc.content, 20),
-                        selectedApproach: extractSelectedApproachName(shapingDoc.content),
-                    }
-                    : null,
-                evidence: {
-                    files: evidenceRecords.map((record) => ({
-                        name: record.id,
-                        title: record.description || extractEvidenceTitle(record.id, record.content || record.summary || ''),
-                        preview: depth === 'full' ? getPreview(record.content || record.summary || '', 10) : '',
-                        size: (record.content || '').length,
-                        createdAt: record.createdAt,
-                    })),
-                    count: evidenceRecords.length,
-                },
-                history: {
-                    recentEvents: timelineEvents.map((event) => ({
-                        type: event.type,
-                        timestamp: event.timestamp,
-                        summary: JSON.stringify(event.data),
-                    })),
-                    totalEvents: timelineEvents.length,
-                },
-                lifecycle: lifecycleDoc
-                    ? { content: depth === 'full' ? lifecycleDoc.content : getPreview(lifecycleDoc.content, 10) }
-                    : null,
-                constraints: ideaDoc ? extractConstraints(ideaDoc.content) : [],
-                questions: ideaDoc ? extractQuestions(ideaDoc.content) : [],
-            };
-
-            return createSuccess(result);
-        }
-
-        // Read all files in parallel for directory plans
-        const [ideaContent, shapingContent, lifecycleContent, evidence, history] = await Promise.all([
-            readFileSafe(join(planPath, 'IDEA.md')),
-            readFileSafe(join(planPath, 'SHAPING.md')),
-            readFileSafe(join(planPath, 'LIFECYCLE.md')),
-            readEvidenceFilesWithPreview(planPath, depth),
-            readRecentHistory(planPath),
+        const [ideaDoc, shapingDoc, lifecycleDoc, identity, evidenceRecords, timelineEvents] = await Promise.all([
+            readIdeaDoc(planPath),
+            readShapingDoc(planPath),
+            readPlanDoc(planPath, 'lifecycle', 'LIFECYCLE.md'),
+            readPlanIdentity(planPath),
+            readEvidenceRecords(planPath),
+            readTimelineEvents(planPath, { limit: 50 }),
         ]);
-        
-        // Build result
+
         const result: PlanContextResult = {
-            planId: null,
-            stage: extractStage(lifecycleContent, ideaContent),
-            idea: ideaContent ? { content: depth === 'full' ? ideaContent : getPreview(ideaContent, 20) } : null,
-            shaping: shapingContent ? {
-                content: depth === 'full' ? shapingContent : getPreview(shapingContent, 20),
-                selectedApproach: extractSelectedApproachName(shapingContent),
-            } : null,
-            evidence,
-            history,
-            lifecycle: lifecycleContent ? { content: depth === 'full' ? lifecycleContent : getPreview(lifecycleContent, 10) } : null,
-            constraints: ideaContent ? extractConstraints(ideaContent) : [],
-            questions: ideaContent ? extractQuestions(ideaContent) : [],
+            planId: identity.planId,
+            stage: identity.stage,
+            idea: ideaDoc
+                ? { content: depth === 'full' ? ideaDoc.content : getPreview(ideaDoc.content, 20) }
+                : null,
+            shaping: shapingDoc
+                ? {
+                    content: depth === 'full' ? shapingDoc.content : getPreview(shapingDoc.content, 20),
+                    selectedApproach: extractSelectedApproachName(shapingDoc.content),
+                }
+                : null,
+            evidence: {
+                files: evidenceRecords.map((record) => ({
+                    name: record.id,
+                    title: record.description || extractEvidenceTitle(record.id, record.content || record.summary || ''),
+                    preview: depth === 'full' ? getPreview(record.content || record.summary || '', 10) : '',
+                    size: (record.content || '').length,
+                    createdAt: record.createdAt,
+                })),
+                count: evidenceRecords.length,
+            },
+            history: {
+                recentEvents: timelineEvents.map((event) => ({
+                    type: event.type,
+                    timestamp: event.timestamp,
+                    summary: JSON.stringify(event.data),
+                })),
+                totalEvents: timelineEvents.length,
+            },
+            lifecycle: lifecycleDoc
+                ? { content: depth === 'full' ? lifecycleDoc.content : getPreview(lifecycleDoc.content, 10) }
+                : null,
+            constraints: ideaDoc ? extractConstraints(ideaDoc.content) : [],
+            questions: ideaDoc ? extractQuestions(ideaDoc.content) : [],
         };
-        
+
         return createSuccess(result);
     } catch (error) {
         return formatError(error);

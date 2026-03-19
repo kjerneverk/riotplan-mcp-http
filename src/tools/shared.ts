@@ -3,7 +3,6 @@
  */
 
 import { resolve, join, basename, relative, isAbsolute } from 'node:path';
-import { access, readFile } from 'node:fs/promises';
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import type { ToolResult, ToolExecutionContext } from '../types.js';
 
@@ -193,61 +192,57 @@ export function createSuccess(data: any, message?: string): ToolResult {
 }
 
 /**
- * Check if a path is an idea or shaping plan (supports both directory and .plan SQLite formats)
+ * Ensure a plan has a plan.yaml manifest file
  * 
- * @param path - Path to check
- * @returns Object with detection result and details
+ * If the manifest doesn't exist, creates it with basic plan identity.
+ * If it exists, does nothing (preserves existing data).
+ * 
+ * @param planPath - Absolute path to plan directory
+ * @param options - Optional override values for id and title
+ * @returns True if manifest was created, false if it already existed
+ */
+export async function ensurePlanManifest(
+    planPath: string,
+    options?: { id?: string; title?: string; catalysts?: string[] }
+): Promise<boolean> {
+    try {
+        const { readPlanManifest, writePlanManifest } = await import('@kjerneverk/riotplan-catalyst');
+        
+        const existing = await readPlanManifest(planPath);
+        if (existing) {
+            return false;
+        }
+        
+        const planDirName = basename(planPath);
+        const id = options?.id || planDirName;
+        const title = options?.title || planDirName.split('-').map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1)
+        ).join(' ');
+        
+        await writePlanManifest(planPath, {
+            id,
+            title,
+            catalysts: options?.catalysts,
+            created: new Date().toISOString(),
+        });
+        
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Check if a plan is in idea or shaping stage (SQLite .plan files only)
  */
 export async function isIdeaOrShapingDirectory(path: string): Promise<{
     isIdeaOrShaping: boolean;
     detected: string[];
     stage?: string;
 }> {
-    if (path.endsWith('.plan')) {
-        return isIdeaOrShapingSqlite(path);
-    }
-
-    const detected: string[] = [];
-    let stage: string | undefined;
-
-    try {
-        await access(join(path, 'IDEA.md'));
-        detected.push('IDEA.md');
-    } catch { /* file doesn't exist */ }
-
-    try {
-        await access(join(path, 'SHAPING.md'));
-        detected.push('SHAPING.md');
-    } catch { /* file doesn't exist */ }
-
-    try {
-        await access(join(path, 'LIFECYCLE.md'));
-        detected.push('LIFECYCLE.md');
-        
-        try {
-            const content = await readFile(join(path, 'LIFECYCLE.md'), 'utf-8');
-            const stageMatch = content.match(/\*\*Stage\*\*: `(\w+)`/);
-            if (stageMatch) {
-                stage = stageMatch[1];
-            }
-        } catch { /* couldn't read file */ }
-    } catch { /* file doesn't exist */ }
-
-    return {
-        isIdeaOrShaping: detected.length > 0 && (stage === 'idea' || stage === 'shaping' || !stage),
-        detected,
-        stage,
-    };
-}
-
-async function isIdeaOrShapingSqlite(planPath: string): Promise<{
-    isIdeaOrShaping: boolean;
-    detected: string[];
-    stage?: string;
-}> {
     try {
         const { createSqliteProvider } = await import('@kjerneverk/riotplan-format');
-        const provider = createSqliteProvider(planPath);
+        const provider = createSqliteProvider(path);
         const metadataResult = await provider.getMetadata();
         const stage = metadataResult.data?.stage;
         const filesResult = await provider.getFiles();
@@ -265,52 +260,5 @@ async function isIdeaOrShapingSqlite(planPath: string): Promise<{
         };
     } catch {
         return { isIdeaOrShaping: false, detected: [] };
-    }
-}
-
-/**
- * Ensure a plan has a plan.yaml manifest file
- * 
- * If the manifest doesn't exist, creates it with basic plan identity.
- * If it exists, does nothing (preserves existing data).
- * 
- * @param planPath - Absolute path to plan directory
- * @param options - Optional override values for id and title
- * @returns True if manifest was created, false if it already existed
- */
-export async function ensurePlanManifest(
-    planPath: string,
-    options?: { id?: string; title?: string; catalysts?: string[] }
-): Promise<boolean> {
-    try {
-        // Try to import the manifest functions
-        const { readPlanManifest, writePlanManifest } = await import('@kjerneverk/riotplan-catalyst');
-        
-        // Check if manifest already exists
-        const existing = await readPlanManifest(planPath);
-        if (existing) {
-            return false; // Already exists, nothing to do
-        }
-        
-        // Generate id and title from path if not provided
-        const planDirName = basename(planPath);
-        const id = options?.id || planDirName;
-        const title = options?.title || planDirName.split('-').map(word => 
-            word.charAt(0).toUpperCase() + word.slice(1)
-        ).join(' ');
-        
-        // Create minimal manifest
-        await writePlanManifest(planPath, {
-            id,
-            title,
-            catalysts: options?.catalysts,
-            created: new Date().toISOString(),
-        });
-        
-        return true; // Created new manifest
-    } catch {
-        // If riotplan-catalyst is not available, silently skip
-        // This maintains backward compatibility
-        return false;
     }
 }

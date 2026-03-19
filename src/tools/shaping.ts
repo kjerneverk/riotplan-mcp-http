@@ -3,7 +3,7 @@
  */
 
 import { z } from "zod";
-import { formatTimestamp, resolveDirectory, ensurePlanManifest } from "./shared.js";
+import { formatTimestamp, resolveDirectory } from "./shared.js";
 import { logEvent } from "./history.js";
 import { transitionStage } from "./transition.js";
 import {
@@ -69,11 +69,6 @@ async function addShapingEvent(planPath: string, type: string, data: Record<stri
 
 export async function shapingStart(args: z.infer<typeof ShapingStartSchema>): Promise<string> {
     const shapingPath = args.planId || process.cwd();
-  
-    // Ensure plan has manifest
-    if (!shapingPath.endsWith(".plan")) {
-        await ensurePlanManifest(shapingPath);
-    }
   
     // Create SHAPING.md
     const shapingContent = `# Shaping: [Name]

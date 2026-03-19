@@ -3,8 +3,6 @@
  */
 
 import { z } from "zod";
-import { join } from "node:path";
-import { readFile, writeFile, mkdir, appendFile, readdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { formatTimestamp, resolveDirectory } from "./shared.js";
 import type { ToolResult, ToolExecutionContext } from '../types.js';
@@ -50,218 +48,58 @@ export const HistoryShowSchema = z.object({
  * Log an event to the timeline
  */
 export async function logEvent(planPath: string, event: TimelineEvent): Promise<void> {
-    if (planPath.endsWith('.plan')) {
-        const provider = createSqliteProvider(planPath);
-        try {
-            await provider.addTimelineEvent({
-                id: randomUUID(),
-                timestamp: event.timestamp,
-                type: event.type as any,
-                data: event.data,
-            } as any);
-            return;
-        } finally {
-            await provider.close();
-        }
+    const provider = createSqliteProvider(planPath);
+    try {
+        await provider.addTimelineEvent({
+            id: randomUUID(),
+            timestamp: event.timestamp,
+            type: event.type as any,
+            data: event.data,
+        } as any);
+    } finally {
+        await provider.close();
     }
-
-    const historyDir = join(planPath, '.history');
-    await mkdir(historyDir, { recursive: true });
-  
-    const timelinePath = join(historyDir, 'timeline.jsonl');
-    const line = JSON.stringify(event) + '\n';
-  
-    await appendFile(timelinePath, line);
 }
 
 /**
  * Read timeline events
  */
 export async function readTimeline(planPath: string): Promise<TimelineEvent[]> {
-    if (planPath.endsWith('.plan')) {
-        const provider = createSqliteProvider(planPath);
-        try {
-            const eventsResult = await provider.getTimelineEvents();
-            if (!eventsResult.success || !eventsResult.data) {
-                return [];
-            }
-            return eventsResult.data.map((event) => ({
-                timestamp: event.timestamp,
-                type: event.type as any,
-                data: event.data,
-            }));
-        } finally {
-            await provider.close();
-        }
-    }
-
-    const timelinePath = join(planPath, '.history', 'timeline.jsonl');
-  
+    const provider = createSqliteProvider(planPath);
     try {
-        const content = await readFile(timelinePath, 'utf-8');
-        return content
-            .split('\n')
-            .filter(line => line.trim())
-            .map(line => JSON.parse(line));
-    } catch (error: any) {
-        if (error.code === 'ENOENT') {
+        const eventsResult = await provider.getTimelineEvents();
+        if (!eventsResult.success || !eventsResult.data) {
             return [];
         }
-        throw error;
-    }
-}
-
-type FileSnapshot = { exists: boolean; content?: string };
-
-async function restoreSnapshotFiles(baseDir: string, snapshots?: Record<string, FileSnapshot>): Promise<string[]> {
-    if (!snapshots) {
-        return [];
-    }
-
-    const restored: string[] = [];
-    for (const [name, snapshot] of Object.entries(snapshots)) {
-        if (!snapshot?.exists || typeof snapshot.content !== 'string') {
-            continue;
-        }
-        const targetPath = join(baseDir, name);
-        await writeFile(targetPath, snapshot.content);
-        restored.push(targetPath);
-    }
-    return restored;
-}
-
-/**
- * Try to read a file and return a snapshot
- */
-async function snapshotFile(filePath: string): Promise<FileSnapshot> {
-    try {
-        const content = await readFile(filePath, 'utf-8');
-        return { exists: true, content };
-    } catch {
-        return { exists: false };
+        return eventsResult.data.map((event) => ({
+            timestamp: event.timestamp,
+            type: event.type as any,
+            data: event.data,
+        }));
+    } finally {
+        await provider.close();
     }
 }
 
 /**
- * Capture current state snapshot.
- * Includes idea/shaping/lifecycle files AND build outputs (plan steps, SUMMARY, etc.)
- */
-async function captureCurrentState(planPath: string): Promise<{
-    timestamp: string;
-    stage: string;
-    idea?: FileSnapshot;
-    shaping?: FileSnapshot;
-    lifecycle?: FileSnapshot;
-    buildOutputs?: Record<string, FileSnapshot>;
-    steps?: Record<string, FileSnapshot>;
-}> {
-    const snapshot: {
-        timestamp: string;
-        stage: string;
-        idea?: FileSnapshot;
-        shaping?: FileSnapshot;
-        lifecycle?: FileSnapshot;
-        buildOutputs?: Record<string, FileSnapshot>;
-        steps?: Record<string, FileSnapshot>;
-    } = {
-        timestamp: formatTimestamp(),
-        stage: 'unknown',
-    };
-  
-    // Core plan files
-    snapshot.idea = await snapshotFile(join(planPath, 'IDEA.md'));
-    snapshot.shaping = await snapshotFile(join(planPath, 'SHAPING.md'));
-    snapshot.lifecycle = await snapshotFile(join(planPath, 'LIFECYCLE.md'));
-  
-    // Extract current stage from LIFECYCLE.md
-    if (snapshot.lifecycle?.exists && snapshot.lifecycle.content) {
-        const stageMatch = snapshot.lifecycle.content.match(/\*\*Stage\*\*:\s*`(\w+)`/);
-        if (stageMatch) {
-            snapshot.stage = stageMatch[1];
-        }
-    }
-  
-    // Build output files
-    const buildFiles = ['SUMMARY.md', 'EXECUTION_PLAN.md', 'STATUS.md', 'PROVENANCE.md'];
-    const buildOutputs: Record<string, FileSnapshot> = {};
-    for (const file of buildFiles) {
-        const snap = await snapshotFile(join(planPath, file));
-        if (snap.exists) {
-            buildOutputs[file] = snap;
-        }
-    }
-    if (Object.keys(buildOutputs).length > 0) {
-        snapshot.buildOutputs = buildOutputs;
-    }
-  
-    // Step files from plan/ directory
-    try {
-        const planDir = join(planPath, 'plan');
-        const stepFiles = await readdir(planDir);
-        const steps: Record<string, FileSnapshot> = {};
-        for (const file of stepFiles.filter(f => f.endsWith('.md'))) {
-            steps[file] = await snapshotFile(join(planDir, file));
-        }
-        if (Object.keys(steps).length > 0) {
-            snapshot.steps = steps;
-        }
-    } catch {
-        // No plan/ directory
-    }
-  
-    return snapshot;
-}
-
-/**
- * Count events since last checkpoint
- */
-async function countEventsSinceLastCheckpoint(planPath: string): Promise<number> {
-    const events = await readTimeline(planPath);
-  
-    // Find last checkpoint
-    let lastCheckpointIndex = -1;
-    for (let i = events.length - 1; i >= 0; i--) {
-        if (events[i].type === 'checkpoint_created') {
-            lastCheckpointIndex = i;
-            break;
-        }
-    }
-  
-    if (lastCheckpointIndex === -1) {
-        return events.length;
-    }
-  
-    return events.length - lastCheckpointIndex - 1;
-}
-
-/**
- * Get list of files in plan directory
+ * Get list of files in plan
  */
 async function getChangedFiles(planPath: string): Promise<string[]> {
-    if (planPath.endsWith('.plan')) {
-        const provider = createSqliteProvider(planPath);
-        try {
-            const [filesResult, stepsResult] = await Promise.all([
-                provider.getFiles(),
-                provider.getSteps(),
-            ]);
-            const files = filesResult.success && filesResult.data
-                ? filesResult.data.map((f) => f.filename)
-                : [];
-            const steps = stepsResult.success && stepsResult.data
-                ? stepsResult.data.map((s) => `${s.number.toString().padStart(2, '0')}-${s.code}.md`)
-                : [];
-            return [...files, ...steps];
-        } finally {
-            await provider.close();
-        }
-    }
-
+    const provider = createSqliteProvider(planPath);
     try {
-        const files = await readdir(planPath);
-        return files.filter(f => f.endsWith('.md'));
-    } catch {
-        return [];
+        const [filesResult, stepsResult] = await Promise.all([
+            provider.getFiles(),
+            provider.getSteps(),
+        ]);
+        const files = filesResult.success && filesResult.data
+            ? filesResult.data.map((f) => f.filename)
+            : [];
+        const steps = stepsResult.success && stepsResult.data
+            ? stepsResult.data.map((s) => `${s.number.toString().padStart(2, '0')}-${s.code}.md`)
+            : [];
+        return [...files, ...steps];
+    } finally {
+        await provider.close();
     }
 }
 
@@ -308,10 +146,9 @@ async function capturePromptContext(
     snapshot: any,
     message: string
 ): Promise<void> {
-    if (planPath.endsWith('.plan')) {
-        const provider = createSqliteProvider(planPath);
-        try {
-            const prompt = `# Checkpoint: ${checkpointName}
+    const provider = createSqliteProvider(planPath);
+    try {
+        const prompt = `# Checkpoint: ${checkpointName}
 
 **Timestamp**: ${snapshot.timestamp}
 **Stage**: ${snapshot.stage || 'unknown'}
@@ -329,51 +166,17 @@ ${(await getChangedFiles(planPath)).map(f => `- ${f}`).join('\n')}
 
 ${await formatRecentEvents(planPath, 10)}
 `;
-            const now = formatTimestamp();
-            await provider.saveFile({
-                type: 'prompt',
-                filename: `${checkpointName}.md`,
-                content: prompt,
-                createdAt: now,
-                updatedAt: now,
-            });
-            return;
-        } finally {
-            await provider.close();
-        }
+        const now = formatTimestamp();
+        await provider.saveFile({
+            type: 'prompt',
+            filename: `${checkpointName}.md`,
+            content: prompt,
+            createdAt: now,
+            updatedAt: now,
+        });
+    } finally {
+        await provider.close();
     }
-
-    const promptDir = join(planPath, '.history', 'prompts');
-    await mkdir(promptDir, { recursive: true });
-  
-    const prompt = `# Checkpoint: ${checkpointName}
-
-**Timestamp**: ${snapshot.timestamp}
-**Stage**: ${snapshot.stage || 'unknown'}
-**Message**: ${message}
-
-## Current State
-
-${formatSnapshot(snapshot)}
-
-## Files at This Point
-
-${(await getChangedFiles(planPath)).map(f => `- ${f}`).join('\n')}
-
-## Recent Timeline
-
-${await formatRecentEvents(planPath, 10)}
-
----
-
-This checkpoint captures the state of the plan at this moment in time.
-You can restore to this checkpoint using: \`riotplan_checkpoint({ action: "restore", checkpoint: "${checkpointName}" })\`
-`;
-  
-    await writeFile(
-        join(promptDir, `${checkpointName}.md`),
-        prompt
-    );
 }
 
 // Tool implementations
@@ -382,289 +185,140 @@ export async function checkpointCreate(args: z.infer<typeof CheckpointCreateSche
     const planPath = args.planId || process.cwd();
     const { name, message, capturePrompt } = args;
 
-    if (planPath.endsWith('.plan')) {
-        const provider = createSqliteProvider(planPath);
-        try {
-            const [metadataResult, stepsResult, filesResult] = await Promise.all([
-                provider.getMetadata(),
-                provider.getSteps(),
-                provider.getFiles(),
-            ]);
-            if (!metadataResult.success || !metadataResult.data) {
-                throw new Error(metadataResult.error || 'Failed to read plan metadata');
-            }
+    const provider = createSqliteProvider(planPath);
+    try {
+        const [metadataResult, stepsResult, filesResult] = await Promise.all([
+            provider.getMetadata(),
+            provider.getSteps(),
+            provider.getFiles(),
+        ]);
+        if (!metadataResult.success || !metadataResult.data) {
+            throw new Error(metadataResult.error || 'Failed to read plan metadata');
+        }
 
-            const createdAt = formatTimestamp();
-            const createResult = await provider.createCheckpoint({
+        const createdAt = formatTimestamp();
+        const createResult = await provider.createCheckpoint({
+            name,
+            message,
+            createdAt,
+            snapshot: {
+                metadata: metadataResult.data,
+                steps: (stepsResult.success ? stepsResult.data : [])?.map((s) => ({
+                    number: s.number,
+                    status: s.status,
+                    startedAt: s.startedAt,
+                    completedAt: s.completedAt,
+                })) || [],
+                files: (filesResult.success ? filesResult.data : [])?.map((f) => ({
+                    type: f.type,
+                    filename: f.filename,
+                    content: f.content,
+                })) || [],
+            },
+        } as any);
+        if (!createResult.success) {
+            throw new Error(createResult.error || 'Failed to create checkpoint');
+        }
+
+        const snapshot = {
+            timestamp: createdAt,
+            stage: metadataResult.data.stage,
+            idea: { exists: true, content: filesResult.success ? filesResult.data?.find((f) => f.type === 'idea')?.content : undefined },
+            shaping: { exists: true, content: filesResult.success ? filesResult.data?.find((f) => f.type === 'shaping')?.content : undefined },
+        };
+
+        if (capturePrompt) {
+            await capturePromptContext(planPath, name, snapshot, message);
+        }
+
+        await provider.addTimelineEvent({
+            id: randomUUID(),
+            timestamp: createdAt,
+            type: 'checkpoint_created' as any,
+            data: {
                 name,
                 message,
-                createdAt,
-                snapshot: {
-                    metadata: metadataResult.data,
-                    steps: (stepsResult.success ? stepsResult.data : [])?.map((s) => ({
-                        number: s.number,
-                        status: s.status,
-                        startedAt: s.startedAt,
-                        completedAt: s.completedAt,
-                    })) || [],
-                    files: (filesResult.success ? filesResult.data : [])?.map((f) => ({
-                        type: f.type,
-                        filename: f.filename,
-                        content: f.content,
-                    })) || [],
-                },
-            } as any);
-            if (!createResult.success) {
-                throw new Error(createResult.error || 'Failed to create checkpoint');
-            }
+                snapshotPath: `checkpoint:${name}`,
+                promptPath: `${name}.md`,
+            },
+        } as any);
 
-            const snapshot = {
-                timestamp: createdAt,
-                stage: metadataResult.data.stage,
-                idea: { exists: true, content: filesResult.success ? filesResult.data?.find((f) => f.type === 'idea')?.content : undefined },
-                shaping: { exists: true, content: filesResult.success ? filesResult.data?.find((f) => f.type === 'shaping')?.content : undefined },
-            };
-
-            if (capturePrompt) {
-                await capturePromptContext(planPath, name, snapshot, message);
-            }
-
-            await provider.addTimelineEvent({
-                id: randomUUID(),
-                timestamp: createdAt,
-                type: 'checkpoint_created' as any,
-                data: {
-                    name,
-                    message,
-                    snapshotPath: `checkpoint:${name}`,
-                    promptPath: `${name}.md`,
-                },
-            } as any);
-
-            return `✅ Checkpoint created: ${name}\n\nStored in SQLite storage.\nPrompt artifact: ${name}.md\n\nYou can restore this checkpoint later with:\n  riotplan_checkpoint({ action: "restore", checkpoint: "${name}" })`;
-        } finally {
-            await provider.close();
-        }
+        return `✅ Checkpoint created: ${name}\n\nStored in SQLite storage.\nPrompt artifact: ${name}.md\n\nYou can restore this checkpoint later with:\n  riotplan_checkpoint({ action: "restore", checkpoint: "${name}" })`;
+    } finally {
+        await provider.close();
     }
-  
-    // 1. Create checkpoint directory
-    const checkpointDir = join(planPath, '.history', 'checkpoints');
-    await mkdir(checkpointDir, { recursive: true });
-  
-    // 2. Snapshot current state
-    const snapshot = await captureCurrentState(planPath);
-  
-    // 3. Save checkpoint metadata
-    const checkpoint: CheckpointMetadata = {
-        name,
-        timestamp: snapshot.timestamp,
-        message,
-        stage: snapshot.stage,
-        snapshot: {
-            timestamp: snapshot.timestamp,
-            idea: snapshot.idea,
-            shaping: snapshot.shaping,
-            lifecycle: snapshot.lifecycle,
-            buildOutputs: snapshot.buildOutputs,
-            steps: snapshot.steps,
-        },
-        context: {
-            filesChanged: await getChangedFiles(planPath),
-            eventsSinceLastCheckpoint: await countEventsSinceLastCheckpoint(planPath),
-        },
-    };
-  
-    await writeFile(
-        join(checkpointDir, `${name}.json`),
-        JSON.stringify(checkpoint, null, 2)
-    );
-  
-    // 4. Capture prompt if requested
-    if (capturePrompt) {
-        await capturePromptContext(planPath, name, snapshot, message);
-    }
-  
-    // 5. Log checkpoint event
-    const checkpointEvent: TimelineEvent = {
-        timestamp: snapshot.timestamp,
-        type: 'checkpoint_created',
-        data: { 
-            name, 
-            message,
-            snapshotPath: `.history/checkpoints/${name}.json`,
-            promptPath: `.history/prompts/${name}.md`,
-        },
-    };
-    await logEvent(planPath, checkpointEvent);
-  
-    return `✅ Checkpoint created: ${name}\n\nLocation: ${planPath}/.history/checkpoints/${name}.json\nPrompt: ${planPath}/.history/prompts/${name}.md\n\nYou can restore this checkpoint later with:\n  riotplan_checkpoint({ action: "restore", checkpoint: "${name}" })`;
 }
 
 export async function checkpointList(args: z.infer<typeof CheckpointListSchema>): Promise<string> {
     const planPath = args.planId || process.cwd();
-    if (planPath.endsWith('.plan')) {
-        const provider = createSqliteProvider(planPath);
-        try {
-            const checkpointsResult = await provider.getCheckpoints();
-            const checkpoints = checkpointsResult.success ? checkpointsResult.data || [] : [];
-            if (checkpoints.length === 0) {
-                return 'No checkpoints found.';
-            }
-            let output = `Found ${checkpoints.length} checkpoint(s):\n\n`;
-            for (const checkpoint of checkpoints) {
-                const time = new Date(checkpoint.createdAt).toLocaleString();
-                output += `- **${checkpoint.name}** (${time})\n`;
-                output += `  Message: ${checkpoint.message}\n\n`;
-            }
-            return output;
-        } finally {
-            await provider.close();
-        }
-    }
-
-    const checkpointDir = join(planPath, '.history', 'checkpoints');
-  
+    const provider = createSqliteProvider(planPath);
     try {
-        const files = await readdir(checkpointDir);
-        const checkpoints = files.filter(f => f.endsWith('.json'));
-    
+        const checkpointsResult = await provider.getCheckpoints();
+        const checkpoints = checkpointsResult.success ? checkpointsResult.data || [] : [];
         if (checkpoints.length === 0) {
             return 'No checkpoints found.';
         }
-    
         let output = `Found ${checkpoints.length} checkpoint(s):\n\n`;
-    
-        for (const file of checkpoints) {
-            const content = await readFile(join(checkpointDir, file), 'utf-8');
-            const checkpoint: CheckpointMetadata = JSON.parse(content);
-            const time = new Date(checkpoint.timestamp).toLocaleString();
+        for (const checkpoint of checkpoints) {
+            const time = new Date(checkpoint.createdAt).toLocaleString();
             output += `- **${checkpoint.name}** (${time})\n`;
-            output += `  Stage: ${checkpoint.stage}\n`;
-            output += `  Message: ${checkpoint.message}\n`;
-            output += `  Events since last: ${checkpoint.context.eventsSinceLastCheckpoint}\n\n`;
+            output += `  Message: ${checkpoint.message}\n\n`;
         }
-    
         return output;
-    } catch (error: any) {
-        if (error.code === 'ENOENT') {
-            return 'No checkpoints found.';
-        }
-        throw error;
+    } finally {
+        await provider.close();
     }
 }
 
 export async function checkpointShow(args: z.infer<typeof CheckpointShowSchema>): Promise<string> {
     const planPath = args.planId || process.cwd();
-    if (planPath.endsWith('.plan')) {
-        const provider = createSqliteProvider(planPath);
-        try {
-            const checkpointResult = await provider.getCheckpoint(args.checkpoint);
-            if (!checkpointResult.success || !checkpointResult.data) {
-                throw new Error(`Checkpoint not found: ${args.checkpoint}`);
-            }
-            const checkpoint = checkpointResult.data;
-            const time = new Date(checkpoint.createdAt).toLocaleString();
-            let output = `# Checkpoint: ${checkpoint.name}\n\n`;
-            output += `**Created**: ${time}\n`;
-            output += `**Message**: ${checkpoint.message}\n\n`;
-            output += `## Snapshot\n\n`;
-            output += `- Stage: ${checkpoint.snapshot.metadata.stage}\n`;
-            output += `- Files: ${checkpoint.snapshot.files.length}\n`;
-            output += `- Steps: ${checkpoint.snapshot.steps.length}\n\n`;
-            output += `Restore: riotplan_checkpoint({ action: "restore", checkpoint: "${args.checkpoint}" })`;
-            return output;
-        } finally {
-            await provider.close();
+    const provider = createSqliteProvider(planPath);
+    try {
+        const checkpointResult = await provider.getCheckpoint(args.checkpoint);
+        if (!checkpointResult.success || !checkpointResult.data) {
+            throw new Error(`Checkpoint not found: ${args.checkpoint}`);
         }
+        const checkpoint = checkpointResult.data;
+        const time = new Date(checkpoint.createdAt).toLocaleString();
+        let output = `# Checkpoint: ${checkpoint.name}\n\n`;
+        output += `**Created**: ${time}\n`;
+        output += `**Message**: ${checkpoint.message}\n\n`;
+        output += `## Snapshot\n\n`;
+        output += `- Stage: ${checkpoint.snapshot.metadata.stage}\n`;
+        output += `- Files: ${checkpoint.snapshot.files.length}\n`;
+        output += `- Steps: ${checkpoint.snapshot.steps.length}\n\n`;
+        output += `Restore: riotplan_checkpoint({ action: "restore", checkpoint: "${args.checkpoint}" })`;
+        return output;
+    } finally {
+        await provider.close();
     }
-
-    const checkpointPath = join(planPath, '.history', 'checkpoints', `${args.checkpoint}.json`);
-  
-    const content = await readFile(checkpointPath, 'utf-8');
-    const checkpoint: CheckpointMetadata = JSON.parse(content);
-  
-    const time = new Date(checkpoint.timestamp).toLocaleString();
-  
-    let output = `# Checkpoint: ${checkpoint.name}\n\n`;
-    output += `**Created**: ${time}\n`;
-    output += `**Stage**: ${checkpoint.stage}\n`;
-    output += `**Message**: ${checkpoint.message}\n\n`;
-    output += `## Context\n\n`;
-    output += `- Files changed: ${checkpoint.context.filesChanged.join(', ')}\n`;
-    output += `- Events since last checkpoint: ${checkpoint.context.eventsSinceLastCheckpoint}\n\n`;
-    output += `## Snapshot\n\n`;
-    output += `${formatSnapshot(checkpoint.snapshot)}\n`;
-    output += `\n---\n\n`;
-    output += `View full prompt context: ${planPath}/.history/prompts/${args.checkpoint}.md\n`;
-    output += `Restore: riotplan_checkpoint({ action: "restore", checkpoint: "${args.checkpoint}" })`;
-  
-    return output;
 }
 
 export async function checkpointRestore(args: z.infer<typeof CheckpointRestoreSchema>): Promise<string> {
     const planPath = args.planId || process.cwd();
-    if (planPath.endsWith('.plan')) {
-        const provider = createSqliteProvider(planPath);
-        try {
-            const checkpointResult = await provider.getCheckpoint(args.checkpoint);
-            if (!checkpointResult.success || !checkpointResult.data) {
-                throw new Error(`Checkpoint not found: ${args.checkpoint}`);
-            }
-            const restoreResult = await provider.restoreCheckpoint(args.checkpoint);
-            if (!restoreResult.success) {
-                throw new Error(restoreResult.error || `Failed to restore checkpoint: ${args.checkpoint}`);
-            }
-            await provider.addTimelineEvent({
-                id: randomUUID(),
-                timestamp: formatTimestamp(),
-                type: 'checkpoint_restored' as any,
-                data: {
-                    checkpoint: args.checkpoint,
-                    restoredFrom: checkpointResult.data.createdAt,
-                },
-            } as any);
-            return `✅ Restored to checkpoint: ${args.checkpoint}\n\nRestored from: ${checkpointResult.data.createdAt}\nStage: ${checkpointResult.data.snapshot.metadata.stage}`;
-        } finally {
-            await provider.close();
+    const provider = createSqliteProvider(planPath);
+    try {
+        const checkpointResult = await provider.getCheckpoint(args.checkpoint);
+        if (!checkpointResult.success || !checkpointResult.data) {
+            throw new Error(`Checkpoint not found: ${args.checkpoint}`);
         }
+        const restoreResult = await provider.restoreCheckpoint(args.checkpoint);
+        if (!restoreResult.success) {
+            throw new Error(restoreResult.error || `Failed to restore checkpoint: ${args.checkpoint}`);
+        }
+        await provider.addTimelineEvent({
+            id: randomUUID(),
+            timestamp: formatTimestamp(),
+            type: 'checkpoint_restored' as any,
+            data: {
+                checkpoint: args.checkpoint,
+                restoredFrom: checkpointResult.data.createdAt,
+            },
+        } as any);
+        return `✅ Restored to checkpoint: ${args.checkpoint}\n\nRestored from: ${checkpointResult.data.createdAt}\nStage: ${checkpointResult.data.snapshot.metadata.stage}`;
+    } finally {
+        await provider.close();
     }
-
-    const checkpointPath = join(planPath, '.history', 'checkpoints', `${args.checkpoint}.json`);
-  
-    const content = await readFile(checkpointPath, 'utf-8');
-    const checkpoint: CheckpointMetadata = JSON.parse(content);
-  
-    // Restore core lifecycle files from snapshot
-    if (checkpoint.snapshot.idea?.exists && checkpoint.snapshot.idea.content) {
-        await writeFile(join(planPath, 'IDEA.md'), checkpoint.snapshot.idea.content);
-    }
-  
-    if (checkpoint.snapshot.shaping?.exists && checkpoint.snapshot.shaping.content) {
-        await writeFile(join(planPath, 'SHAPING.md'), checkpoint.snapshot.shaping.content);
-    }
-  
-    if (checkpoint.snapshot.lifecycle?.exists && checkpoint.snapshot.lifecycle.content) {
-        await writeFile(join(planPath, 'LIFECYCLE.md'), checkpoint.snapshot.lifecycle.content);
-    }
-
-    // Restore build artifacts and step files when present
-    const restoredBuildOutputs = await restoreSnapshotFiles(planPath, checkpoint.snapshot.buildOutputs);
-    const planDir = join(planPath, 'plan');
-    await mkdir(planDir, { recursive: true });
-    const restoredSteps = await restoreSnapshotFiles(planDir, checkpoint.snapshot.steps);
-  
-    // Log restoration event
-    const restoreEvent: TimelineEvent = {
-        timestamp: formatTimestamp(),
-        type: 'checkpoint_restored',
-        data: { 
-            checkpoint: args.checkpoint,
-            restoredFrom: checkpoint.timestamp,
-        },
-    };
-    await logEvent(planPath, restoreEvent);
-  
-    return `✅ Restored to checkpoint: ${args.checkpoint}\n\nRestored from: ${checkpoint.timestamp}\nStage: ${checkpoint.stage}\n\nFiles restored:\n${checkpoint.context.filesChanged.map((f: string) => `  - ${f}`).join('\n')}\n\nBuild artifacts restored: ${restoredBuildOutputs.length}\nStep files restored: ${restoredSteps.length}`;
 }
 
 export async function historyShow(args: z.infer<typeof HistoryShowSchema>): Promise<string> {

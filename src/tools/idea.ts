@@ -5,7 +5,7 @@
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
-import { readFile, writeFile, mkdir, readdir, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { assertNoClientDirectoryOverride, formatTimestamp, resolveDirectory } from "./shared.js";
 import { logEvent } from "./history.js";
 import type { EvidenceType } from "@kjerneverk/riotplan";
@@ -120,35 +120,6 @@ async function addTimelineEventToSqlite(
         type: type as any,
         data,
     });
-}
-
-/**
- * Check for filename collisions and generate unique filename
- * @param evidenceDir - Evidence directory path
- * @param baseFilename - Base filename without extension
- * @returns Unique filename without extension
- */
-async function getUniqueEvidenceFilename(evidenceDir: string, baseFilename: string): Promise<string> {
-    try {
-        const existingFiles = await readdir(evidenceDir);
-        const existingNames = new Set(existingFiles.map(f => f.replace(/\.md$/, '')));
-        
-        // If no collision, return base filename
-        if (!existingNames.has(baseFilename)) {
-            return baseFilename;
-        }
-        
-        // Find next available number suffix
-        let counter = 2;
-        while (existingNames.has(`${baseFilename}-${counter}`)) {
-            counter++;
-        }
-        
-        return `${baseFilename}-${counter}`;
-    } catch {
-        // If directory doesn't exist yet, no collision possible
-        return baseFilename;
-    }
 }
 
 // Tool schemas
@@ -310,357 +281,126 @@ export async function ideaCreate(args: z.infer<typeof IdeaCreateSchema> & { pare
 
 export async function ideaAddNote(args: z.infer<typeof IdeaAddNoteSchema>): Promise<string> {
     const ideaPath = args.planId || process.cwd();
-    if (ideaPath.endsWith(".plan")) {
-        const metaProvider = createSqliteProvider(ideaPath);
-        const metadataResult = await metaProvider.getMetadata();
-        await metaProvider.close();
-        const currentIdea = await readTypedFileFromSqlite(ideaPath, "idea");
-        const base = currentIdea?.content || defaultIdeaContent(metadataResult.data?.id || "idea");
-        const updated = appendBulletToSection(base, "## Initial Thoughts", args.note);
-        await saveTypedFileToSqlite(ideaPath, "idea", "IDEA.md", updated);
-        await addTimelineEventToSqlite(ideaPath, "note_added", { note: args.note });
-        return `✅ Note added to idea`;
-    }
-    const ideaFile = join(ideaPath, "IDEA.md");
-  
-    let content = await readFile(ideaFile, "utf-8");
-  
-    // Find the Initial Thoughts section and add the note
-    const thoughtsSection = "## Initial Thoughts";
-    const thoughtsIndex = content.indexOf(thoughtsSection);
-  
-    if (thoughtsIndex === -1) {
-        throw new Error("Could not find Initial Thoughts section in IDEA.md");
-    }
-  
-    // Find the next section
-    const nextSectionIndex = content.indexOf("\n## ", thoughtsIndex + thoughtsSection.length);
-    const insertPoint = nextSectionIndex === -1 ? content.length : nextSectionIndex;
-  
-    // Insert the note
-    const note = `- ${args.note}\n`;
-    content = content.slice(0, insertPoint) + note + content.slice(insertPoint);
-  
-    await writeFile(ideaFile, content, "utf-8");
-  
-    // Log event
-    await logEvent(ideaPath, {
-        timestamp: formatTimestamp(),
-        type: 'note_added',
-        data: { note: args.note },
-    });
-  
+    const metaProvider = createSqliteProvider(ideaPath);
+    const metadataResult = await metaProvider.getMetadata();
+    await metaProvider.close();
+    const currentIdea = await readTypedFileFromSqlite(ideaPath, "idea");
+    const base = currentIdea?.content || defaultIdeaContent(metadataResult.data?.id || "idea");
+    const updated = appendBulletToSection(base, "## Initial Thoughts", args.note);
+    await saveTypedFileToSqlite(ideaPath, "idea", "IDEA.md", updated);
+    await addTimelineEventToSqlite(ideaPath, "note_added", { note: args.note });
     return `✅ Note added to idea`;
 }
 
 export async function ideaAddConstraint(args: z.infer<typeof IdeaAddConstraintSchema>): Promise<string> {
     const ideaPath = args.planId || process.cwd();
-    if (ideaPath.endsWith(".plan")) {
-        const metaProvider = createSqliteProvider(ideaPath);
-        const metadataResult = await metaProvider.getMetadata();
-        await metaProvider.close();
-        const currentIdea = await readTypedFileFromSqlite(ideaPath, "idea");
-        const base = currentIdea?.content || defaultIdeaContent(metadataResult.data?.id || "idea");
-        const updated = appendBulletToSection(base, "## Constraints", args.constraint);
-        await saveTypedFileToSqlite(ideaPath, "idea", "IDEA.md", updated);
-        await addTimelineEventToSqlite(ideaPath, "constraint_added", { constraint: args.constraint });
-        return `✅ Constraint added to idea`;
-    }
-    const ideaFile = join(ideaPath, "IDEA.md");
-  
-    let content = await readFile(ideaFile, "utf-8");
-  
-    const constraintsSection = "## Constraints";
-    const constraintsIndex = content.indexOf(constraintsSection);
-  
-    if (constraintsIndex === -1) {
-        throw new Error("Could not find Constraints section in IDEA.md");
-    }
-  
-    const nextSectionIndex = content.indexOf("\n## ", constraintsIndex + constraintsSection.length);
-    const insertPoint = nextSectionIndex === -1 ? content.length : nextSectionIndex;
-  
-    const constraint = `- ${args.constraint}\n`;
-    content = content.slice(0, insertPoint) + constraint + content.slice(insertPoint);
-  
-    await writeFile(ideaFile, content, "utf-8");
-  
-    // Log event
-    await logEvent(ideaPath, {
-        timestamp: formatTimestamp(),
-        type: 'constraint_added',
-        data: { constraint: args.constraint },
-    });
-  
+    const metaProvider = createSqliteProvider(ideaPath);
+    const metadataResult = await metaProvider.getMetadata();
+    await metaProvider.close();
+    const currentIdea = await readTypedFileFromSqlite(ideaPath, "idea");
+    const base = currentIdea?.content || defaultIdeaContent(metadataResult.data?.id || "idea");
+    const updated = appendBulletToSection(base, "## Constraints", args.constraint);
+    await saveTypedFileToSqlite(ideaPath, "idea", "IDEA.md", updated);
+    await addTimelineEventToSqlite(ideaPath, "constraint_added", { constraint: args.constraint });
     return `✅ Constraint added to idea`;
 }
 
 export async function ideaAddQuestion(args: z.infer<typeof IdeaAddQuestionSchema>): Promise<string> {
     const ideaPath = args.planId || process.cwd();
-    if (ideaPath.endsWith(".plan")) {
-        const metaProvider = createSqliteProvider(ideaPath);
-        const metadataResult = await metaProvider.getMetadata();
-        await metaProvider.close();
-        const currentIdea = await readTypedFileFromSqlite(ideaPath, "idea");
-        const base = currentIdea?.content || defaultIdeaContent(metadataResult.data?.id || "idea");
-        const updated = appendBulletToSection(base, "## Questions", args.question);
-        await saveTypedFileToSqlite(ideaPath, "idea", "IDEA.md", updated);
-        await addTimelineEventToSqlite(ideaPath, "question_added", { question: args.question });
-        return `✅ Question added to idea`;
-    }
-    const ideaFile = join(ideaPath, "IDEA.md");
-  
-    let content = await readFile(ideaFile, "utf-8");
-  
-    const questionsSection = "## Questions";
-    const questionsIndex = content.indexOf(questionsSection);
-  
-    if (questionsIndex === -1) {
-        throw new Error("Could not find Questions section in IDEA.md");
-    }
-  
-    const nextSectionIndex = content.indexOf("\n## ", questionsIndex + questionsSection.length);
-    const insertPoint = nextSectionIndex === -1 ? content.length : nextSectionIndex;
-  
-    const question = `- ${args.question}\n`;
-    content = content.slice(0, insertPoint) + question + content.slice(insertPoint);
-  
-    await writeFile(ideaFile, content, "utf-8");
-  
-    // Log event
-    await logEvent(ideaPath, {
-        timestamp: formatTimestamp(),
-        type: 'question_added',
-        data: { question: args.question },
-    });
-  
+    const metaProvider = createSqliteProvider(ideaPath);
+    const metadataResult = await metaProvider.getMetadata();
+    await metaProvider.close();
+    const currentIdea = await readTypedFileFromSqlite(ideaPath, "idea");
+    const base = currentIdea?.content || defaultIdeaContent(metadataResult.data?.id || "idea");
+    const updated = appendBulletToSection(base, "## Questions", args.question);
+    await saveTypedFileToSqlite(ideaPath, "idea", "IDEA.md", updated);
+    await addTimelineEventToSqlite(ideaPath, "question_added", { question: args.question });
     return `✅ Question added to idea`;
 }
 
 export async function ideaAddEvidence(args: z.infer<typeof IdeaAddEvidenceSchema>): Promise<string> {
     const ideaPath = args.planId || process.cwd();
-    if (ideaPath.endsWith(".plan")) {
-        const provider = createSqliteProvider(ideaPath);
-        const evidenceId = generateEvidenceFilename(args.description);
-        const now = formatTimestamp();
-        const evidenceResult = await provider.addEvidence({
-            id: evidenceId,
-            description: args.description,
-            source: args.source,
-            sourceUrl: args.sourceUrl,
-            gatheringMethod: args.gatheringMethod,
-            content: args.content,
-            filePath: args.evidencePath,
-            relevanceScore: args.relevanceScore,
-            originalQuery: args.originalQuery,
-            summary: args.summary,
-            createdAt: now,
-        });
-        if (!evidenceResult.success) {
-            await provider.close();
-            throw new Error(evidenceResult.error || "Failed to add evidence");
-        }
-
-        const currentIdea = await readTypedFileFromSqlite(ideaPath, "idea");
-        if (currentIdea) {
-            const link = `${args.description}${args.source ? ` (${args.source})` : ""}`;
-            const updated = appendBulletToSection(currentIdea.content, "## Evidence", link);
-            await provider.saveFile({
-                type: "idea",
-                filename: currentIdea.filename || "IDEA.md",
-                content: updated,
-                createdAt: currentIdea.createdAt || now,
-                updatedAt: now,
-            });
-        }
-
-        await provider.addTimelineEvent({
-            id: randomUUID(),
-            timestamp: now,
-            type: "evidence_added",
-            data: {
-                description: args.description,
-                source: args.source,
-                sourceUrl: args.sourceUrl,
-                originalQuery: args.originalQuery,
-            },
-        });
+    const provider = createSqliteProvider(ideaPath);
+    const evidenceId = generateEvidenceFilename(args.description);
+    const now = formatTimestamp();
+    const evidenceResult = await provider.addEvidence({
+        id: evidenceId,
+        description: args.description,
+        source: args.source,
+        sourceUrl: args.sourceUrl,
+        gatheringMethod: args.gatheringMethod,
+        content: args.content,
+        filePath: args.evidencePath,
+        relevanceScore: args.relevanceScore,
+        originalQuery: args.originalQuery,
+        summary: args.summary,
+        createdAt: now,
+    });
+    if (!evidenceResult.success) {
         await provider.close();
-        return `✅ Evidence added: ${args.description}`;
+        throw new Error(evidenceResult.error || "Failed to add evidence");
     }
-    const ideaFile = join(ideaPath, "IDEA.md");
-  
-    let evidencePath = args.evidencePath;
-    let evidenceId: string | undefined;
-  
-    // Handle inline evidence (pasted text)
-    if (evidencePath === "inline" || args.content) {
-        if (!args.content) {
-            throw new Error("Content is required when evidencePath is 'inline'");
-        }
-    
-        // Create evidence directory at top level
-        const evidenceDir = join(ideaPath, "evidence");
-        await mkdir(evidenceDir, { recursive: true });
-    
-        // Generate descriptive filename from description
-        const baseFilename = generateEvidenceFilename(args.description);
-        evidenceId = await getUniqueEvidenceFilename(evidenceDir, baseFilename);
-        const evidenceFilePath = join(evidenceDir, `${evidenceId}.md`);
-    
-        // Write evidence content
-        const evidenceContent = `# Evidence: ${args.description}\n\n` +
-            `**Source**: ${args.source || 'user paste'}\n` +
-            (args.sourceUrl ? `**Source URL**: ${args.sourceUrl}\n` : '') +
-            (args.originalQuery ? `**Original Query**: ${args.originalQuery}\n` : '') +
-            `**Added**: ${formatTimestamp()}\n` +
-            (args.gatheringMethod ? `**Gathering Method**: ${args.gatheringMethod}\n` : '') +
-            (args.relevanceScore !== undefined ? `**Relevance Score**: ${args.relevanceScore}\n` : '') +
-            `\n---\n\n${args.content}`;
-    
-        await writeFile(evidenceFilePath, evidenceContent);
-        evidencePath = `evidence/${evidenceId}.md`;
+
+    const currentIdea = await readTypedFileFromSqlite(ideaPath, "idea");
+    if (currentIdea) {
+        const link = `${args.description}${args.source ? ` (${args.source})` : ""}`;
+        const updated = appendBulletToSection(currentIdea.content, "## Evidence", link);
+        await provider.saveFile({
+            type: "idea",
+            filename: currentIdea.filename || "IDEA.md",
+            content: updated,
+            createdAt: currentIdea.createdAt || now,
+            updatedAt: now,
+        });
     }
-  
-    // Update IDEA.md
-    let content = await readFile(ideaFile, "utf-8");
-  
-    const evidenceSection = "## Evidence";
-    const evidenceIndex = content.indexOf(evidenceSection);
-  
-    if (evidenceIndex === -1) {
-        throw new Error("Could not find Evidence section in IDEA.md");
-    }
-  
-    const nextSectionIndex = content.indexOf("\n## ", evidenceIndex + evidenceSection.length);
-    const insertPoint = nextSectionIndex === -1 ? content.length : nextSectionIndex;
-  
-    const evidence = `- [${args.description}](${evidencePath})${args.source ? ` (${args.source})` : ''}\n`;
-    content = content.slice(0, insertPoint) + evidence + content.slice(insertPoint);
-  
-    await writeFile(ideaFile, content, "utf-8");
-  
-    // Log event
-    await logEvent(ideaPath, {
-        timestamp: formatTimestamp(),
-        type: 'evidence_added',
-        data: { 
-            evidencePath: evidencePath,
+
+    await provider.addTimelineEvent({
+        id: randomUUID(),
+        timestamp: now,
+        type: "evidence_added",
+        data: {
             description: args.description,
             source: args.source,
             sourceUrl: args.sourceUrl,
             originalQuery: args.originalQuery,
-            gatheringMethod: args.gatheringMethod,
-            relevanceScore: args.relevanceScore,
-            summary: args.summary,
-            evidenceId,
         },
     });
-  
-    return `✅ Evidence added: ${args.description}${evidenceId ? ` (ID: ${evidenceId})` : ''}`;
+    await provider.close();
+    return `✅ Evidence added: ${args.description}`;
 }
 
 export async function ideaAddNarrative(args: z.infer<typeof IdeaAddNarrativeSchema>): Promise<string> {
     const ideaPath = args.planId || process.cwd();
     const timestamp = formatTimestamp();
-    if (ideaPath.endsWith(".plan")) {
-        const provider = createSqliteProvider(ideaPath);
-        const timelineResult = await provider.addTimelineEvent({
-            id: randomUUID(),
-            timestamp,
-            type: "narrative_added",
-            data: {
-                content: args.content,
-                source: args.source,
-                context: args.context,
-                speaker: args.speaker || "user",
-            },
-        });
-        if (!timelineResult.success) {
-            await provider.close();
-            throw new Error(timelineResult.error || "Failed to add narrative event");
-        }
-
-        const filesResult = await provider.getFiles();
-        const promptFiles = (filesResult.success ? filesResult.data || [] : [])
-            .filter((f) => f.type === "prompt" && /^\d{3}-.*\.md$/.test(f.filename))
-            .sort((a, b) => a.filename.localeCompare(b.filename));
-        const nextNum = promptFiles.length > 0
-            ? parseInt(promptFiles[promptFiles.length - 1].filename.substring(0, 3), 10) + 1
-            : 1;
-
-        const baseFilename = args.context
-            ? args.context.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 50)
-            : 'narrative';
-        const filename = `${String(nextNum).padStart(3, '0')}-${baseFilename}.md`;
-        const promptContent = `# Narrative: ${args.context || 'User Input'}
-
-**Date**: ${timestamp}
-**Source**: ${args.source || 'unknown'}
-**Speaker**: ${args.speaker || 'user'}
-
----
-
-${args.content}
-`;
-        const fileResult = await provider.saveFile({
-            type: "prompt",
-            filename,
-            content: promptContent,
-            createdAt: timestamp,
-            updatedAt: timestamp,
-        });
-        await provider.close();
-        if (!fileResult.success) {
-            throw new Error(fileResult.error || "Failed to save narrative prompt file");
-        }
-        return `✅ Narrative saved to timeline and ${filename} (${args.content.length} characters)`;
-    }
-  
-    // Log narrative chunk to timeline (not to IDEA.md)
-    // Narrative chunks are kept in the timeline for full-fidelity context
-    await logEvent(ideaPath, {
+    const provider = createSqliteProvider(ideaPath);
+    const timelineResult = await provider.addTimelineEvent({
+        id: randomUUID(),
         timestamp,
-        type: 'narrative_chunk',
-        data: { 
+        type: "narrative_added",
+        data: {
             content: args.content,
             source: args.source,
             context: args.context,
-            speaker: args.speaker || 'user',
+            speaker: args.speaker || "user",
         },
     });
-  
-    // ALSO save to .history/prompts/ directory as a numbered file
-    // This makes narratives reusable as prompts for regenerating/updating plans
-    const historyDir = join(ideaPath, ".history");
-    const promptsDir = join(historyDir, "prompts");
-    await mkdir(promptsDir, { recursive: true });
-  
-    // Find next available number
-    let files: string[] = [];
-    try {
-        files = await readdir(promptsDir);
-    } catch {
-        // Directory doesn't exist yet or is empty
-        files = [];
+    if (!timelineResult.success) {
+        await provider.close();
+        throw new Error(timelineResult.error || "Failed to add narrative event");
     }
-  
-    const promptFiles = files
-        .filter(f => /^\d{3}-.*\.md$/.test(f))
-        .sort();
-    
+
+    const filesResult = await provider.getFiles();
+    const promptFiles = (filesResult.success ? filesResult.data || [] : [])
+        .filter((f) => f.type === "prompt" && /^\d{3}-.*\.md$/.test(f.filename))
+        .sort((a, b) => a.filename.localeCompare(b.filename));
     const nextNum = promptFiles.length > 0
-        ? parseInt(promptFiles[promptFiles.length - 1].substring(0, 3)) + 1
+        ? parseInt(promptFiles[promptFiles.length - 1].filename.substring(0, 3), 10) + 1
         : 1;
-  
-    // Generate filename from context or use generic name
+
     const baseFilename = args.context
         ? args.context.toLowerCase().replace(/[^a-z0-9]+/g, '-').substring(0, 50)
         : 'narrative';
     const filename = `${String(nextNum).padStart(3, '0')}-${baseFilename}.md`;
-    const promptPath = join(promptsDir, filename);
-  
-    // Create prompt file
     const promptContent = `# Narrative: ${args.context || 'User Input'}
 
 **Date**: ${timestamp}
@@ -671,96 +411,63 @@ ${args.content}
 
 ${args.content}
 `;
-  
-    await writeFile(promptPath, promptContent, "utf-8");
-  
+    const fileResult = await provider.saveFile({
+        type: "prompt",
+        filename,
+        content: promptContent,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+    });
+    await provider.close();
+    if (!fileResult.success) {
+        throw new Error(fileResult.error || "Failed to save narrative prompt file");
+    }
     return `✅ Narrative saved to timeline and ${filename} (${args.content.length} characters)`;
 }
 
 export async function ideaKill(args: z.infer<typeof IdeaKillSchema>): Promise<string> {
     const ideaPath = args.planId || process.cwd();
-
-    if (ideaPath.endsWith(".plan")) {
-        const now = formatTimestamp();
-        const provider = createSqliteProvider(ideaPath);
-        const currentIdea = await readTypedFileFromSqlite(ideaPath, "idea");
-        if (currentIdea) {
-            const killedNote = `\n**Killed**: ${now}\n**Reason**: ${args.reason}\n`;
-            const statusSection = "## Status";
-            let updated = currentIdea.content;
-            const statusIndex = updated.indexOf(statusSection);
-            if (statusIndex !== -1) {
-                const nextSectionIndex = updated.indexOf("\n## ", statusIndex + statusSection.length);
-                const insertPoint = nextSectionIndex === -1 ? updated.length : nextSectionIndex;
-                updated = updated.slice(0, insertPoint) + killedNote + updated.slice(insertPoint);
-            } else {
-                updated = updated.trimEnd() + `\n\n${statusSection}\n${killedNote}`;
-            }
-            await provider.saveFile({
-                type: "idea",
-                filename: currentIdea.filename || "IDEA.md",
-                content: updated,
-                createdAt: currentIdea.createdAt || now,
-                updatedAt: now,
-            });
+    const now = formatTimestamp();
+    const provider = createSqliteProvider(ideaPath);
+    const currentIdea = await readTypedFileFromSqlite(ideaPath, "idea");
+    if (currentIdea) {
+        const killedNote = `\n**Killed**: ${now}\n**Reason**: ${args.reason}\n`;
+        const statusSection = "## Status";
+        let updated = currentIdea.content;
+        const statusIndex = updated.indexOf(statusSection);
+        if (statusIndex !== -1) {
+            const nextSectionIndex = updated.indexOf("\n## ", statusIndex + statusSection.length);
+            const insertPoint = nextSectionIndex === -1 ? updated.length : nextSectionIndex;
+            updated = updated.slice(0, insertPoint) + killedNote + updated.slice(insertPoint);
+        } else {
+            updated = updated.trimEnd() + `\n\n${statusSection}\n${killedNote}`;
         }
-        const metadataResult = await provider.getMetadata();
-        if (metadataResult.success && metadataResult.data) {
-            await provider.updateMetadata({ ...metadataResult.data, stage: "cancelled", updatedAt: now });
-        }
-        await provider.addTimelineEvent({
-            id: randomUUID(),
-            timestamp: now,
-            type: "idea_killed" as any,
-            data: { reason: args.reason },
+        await provider.saveFile({
+            type: "idea",
+            filename: currentIdea.filename || "IDEA.md",
+            content: updated,
+            createdAt: currentIdea.createdAt || now,
+            updatedAt: now,
         });
-        await provider.close();
-        return `✅ Idea killed: ${args.reason}`;
     }
-
-    const ideaFile = join(ideaPath, "IDEA.md");
-  
-    let content = await readFile(ideaFile, "utf-8");
-  
-    const statusSection = "## Status";
-    const statusIndex = content.indexOf(statusSection);
-  
-    if (statusIndex !== -1) {
-        const nextSectionIndex = content.indexOf("\n## ", statusIndex + statusSection.length);
-        const insertPoint = nextSectionIndex === -1 ? content.length : nextSectionIndex;
-    
-        const killedNote = `\n**Killed**: ${formatTimestamp()}\n**Reason**: ${args.reason}\n`;
-        content = content.slice(0, insertPoint) + killedNote + content.slice(insertPoint);
-    
-        await writeFile(ideaFile, content, "utf-8");
+    const metadataResult = await provider.getMetadata();
+    if (metadataResult.success && metadataResult.data) {
+        await provider.updateMetadata({ ...metadataResult.data, stage: "cancelled", updatedAt: now });
     }
-  
-    await logEvent(ideaPath, {
-        timestamp: formatTimestamp(),
-        type: 'idea_killed',
+    await provider.addTimelineEvent({
+        id: randomUUID(),
+        timestamp: now,
+        type: "idea_killed" as any,
         data: { reason: args.reason },
     });
-  
+    await provider.close();
     return `✅ Idea killed: ${args.reason}`;
 }
 
 export async function ideaSetContent(args: z.infer<typeof IdeaSetContentSchema>): Promise<string> {
     const ideaPath = args.planId || process.cwd();
-    if (ideaPath.endsWith(".plan")) {
-        await saveTypedFileToSqlite(ideaPath, "idea", "IDEA.md", args.content);
-        await addTimelineEventToSqlite(ideaPath, "note_added", { action: "idea_content_set", length: args.content.length });
-        return "✅ IDEA.md updated";
-    }
-    const ideaFile = join(ideaPath, "IDEA.md");
-
-    await writeFile(ideaFile, args.content, "utf-8");
-
-    await logEvent(ideaPath, {
-        timestamp: formatTimestamp(),
-        type: 'idea_content_set',
-        data: { length: args.content.length },
-    });
-
+    await saveTypedFileToSqlite(ideaPath, "idea", "IDEA.md", args.content);
+    await addTimelineEventToSqlite(ideaPath, "note_added", { action: "idea_content_set", length: args.content.length });
     return "✅ IDEA.md updated";
 }
 
@@ -780,8 +487,6 @@ export async function executeIdeaCreate(args: any, context: ToolExecutionContext
         const resolvedDirectory = resolveDirectory(args, context);
         const result = await ideaCreate({ ...validated, parentDir: resolvedDirectory });
         
-        // Automatically switch context to the newly created plan
-        // This ensures subsequent tool calls operate on the new plan
         if (context.updateContext) {
             context.updateContext({ workingDirectory: result.planPath });
         }

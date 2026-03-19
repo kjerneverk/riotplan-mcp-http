@@ -5,7 +5,6 @@
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveDirectory, formatError, createSuccess } from './shared.js';
-import { loadPlan } from '@kjerneverk/riotplan/plan/loader';
 import { writeStepReflection } from '@kjerneverk/riotplan';
 import { createSqliteProvider } from '@kjerneverk/riotplan-format';
 import { logEvent } from './history.js';
@@ -26,47 +25,32 @@ async function validateStepCompleted(
     planPath: string,
     stepNumber: number
 ): Promise<{ planId: string; error?: string }> {
-    if (planPath.endsWith('.plan')) {
-        const provider = createSqliteProvider(planPath);
-        try {
-            const [metadataResult, stepResult] = await Promise.all([
-                provider.getMetadata(),
-                provider.getStep(stepNumber),
-            ]);
+    const provider = createSqliteProvider(planPath);
+    try {
+        const [metadataResult, stepResult] = await Promise.all([
+            provider.getMetadata(),
+            provider.getStep(stepNumber),
+        ]);
 
-            if (!metadataResult.success || !metadataResult.data) {
-                throw new Error(metadataResult.error || 'Failed to read SQLite plan metadata');
-            }
-            if (!stepResult.success) {
-                throw new Error(stepResult.error || `Failed to read step ${stepNumber}`);
-            }
-            if (!stepResult.data) {
-                return { planId: metadataResult.data.id, error: `Step ${stepNumber} not found in plan` };
-            }
-            if (stepResult.data.status !== 'completed') {
-                return {
-                    planId: metadataResult.data.id,
-                    error: `Cannot reflect on step ${stepNumber} - step must be completed first (current status: ${stepResult.data.status})`,
-                };
-            }
-            return { planId: metadataResult.data.id };
-        } finally {
-            await provider.close();
+        if (!metadataResult.success || !metadataResult.data) {
+            throw new Error(metadataResult.error || 'Failed to read SQLite plan metadata');
         }
+        if (!stepResult.success) {
+            throw new Error(stepResult.error || `Failed to read step ${stepNumber}`);
+        }
+        if (!stepResult.data) {
+            return { planId: metadataResult.data.id, error: `Step ${stepNumber} not found in plan` };
+        }
+        if (stepResult.data.status !== 'completed') {
+            return {
+                planId: metadataResult.data.id,
+                error: `Cannot reflect on step ${stepNumber} - step must be completed first (current status: ${stepResult.data.status})`,
+            };
+        }
+        return { planId: metadataResult.data.id };
+    } finally {
+        await provider.close();
     }
-
-    const plan = await loadPlan(planPath);
-    const step = plan.steps.find(s => s.number === stepNumber);
-    if (!step) {
-        return { planId: plan.metadata.code, error: `Step ${stepNumber} not found in plan` };
-    }
-    if (step.status !== 'completed') {
-        return {
-            planId: plan.metadata.code,
-            error: `Cannot reflect on step ${stepNumber} - step must be completed first (current status: ${step.status})`,
-        };
-    }
-    return { planId: plan.metadata.code };
 }
 
 async function executeStepReflect(
@@ -92,7 +76,7 @@ async function executeStepReflect(
                 step: args.step,
                 reflection: reflectionExcerpt,
                 timestamp: now,
-                storage: planPath.endsWith('.plan') ? 'sqlite' : 'directory',
+                storage: 'sqlite',
                 reflectionFile,
             },
         });

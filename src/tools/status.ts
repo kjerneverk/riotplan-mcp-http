@@ -4,7 +4,7 @@
 
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
-import { resolveDirectory, formatError, createSuccess, ensurePlanManifest } from './shared.js';
+import { resolveDirectory, formatError, createSuccess } from './shared.js';
 import { loadPlan } from '@kjerneverk/riotplan/plan/loader';
 
 async function executeStatus(
@@ -13,10 +13,6 @@ async function executeStatus(
 ): Promise<ToolResult> {
     try {
         const planPath = resolveDirectory(args, context);
-
-        if (!planPath.endsWith('.plan')) {
-            await ensurePlanManifest(planPath);
-        }
 
         const plan = await loadPlan(planPath);
 
