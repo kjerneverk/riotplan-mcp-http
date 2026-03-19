@@ -35,7 +35,6 @@ import { parseUri } from './uri.js';
 import { getPrompts, getPrompt } from './prompts/index.js';
 import { resolveDirectory } from './tools/shared.js';
 import { bindProjectToPlan, getProjectMatchKeys, readProjectBinding } from './tools/project-binding-shared.js';
-import { createCloudRuntime } from '@kjerneverk/riotplan/cloud/runtime';
 import { extractApiKeyFromHeaders, type AuthContext, RbacEngine, type RouteRequirement } from './rbac.js';
 import Logging from '@fjell/logging';
 
@@ -117,6 +116,51 @@ const gcLogger = HttpLogger.get('gc');
 const authLogger = HttpLogger.get('auth');
 const SLOW_PHASE_MS = 200;
 const MEMORY_SNAPSHOT_INTERVAL_MS = 30_000;
+
+type CloudRuntimeLike = {
+    enabled: boolean;
+    workingDirectory: string;
+    contextDirectory: string;
+    syncDown: (opts?: { forceRefresh?: boolean }) => Promise<{
+        plan: { downloadedCount: number; changedCount?: number; remoteIncludedCount: number; skippedUnchangedCount?: number } | null;
+        context: { downloadedCount: number; changedCount?: number; remoteIncludedCount: number; skippedUnchangedCount?: number } | null;
+        syncFreshHit: boolean;
+        coalescedWaiterCount: number;
+    }>;
+    syncUpPlans: () => Promise<void>;
+    syncUpContext: () => Promise<void>;
+};
+
+function createDisabledCloudRuntime(plansDir: string, contextDir: string): CloudRuntimeLike {
+    return {
+        enabled: false,
+        workingDirectory: plansDir,
+        contextDirectory: contextDir,
+        syncDown: async () => ({
+            plan: null,
+            context: null,
+            syncFreshHit: true,
+            coalescedWaiterCount: 0,
+        }),
+        syncUpPlans: async () => {},
+        syncUpContext: async () => {},
+    };
+}
+
+async function createCloudRuntimeCompat(
+    rawConfig: unknown,
+    plansDir: string,
+    contextDir: string,
+    hooks?: { debug?: (event: string, details?: Record<string, unknown>) => void }
+): Promise<CloudRuntimeLike> {
+    try {
+        const mod = await import('@kjerneverk/riotplan/cloud/runtime');
+        const runtime = await mod.createCloudRuntime(rawConfig as any, plansDir, hooks as any);
+        return runtime as CloudRuntimeLike;
+    } catch {
+        return createDisabledCloudRuntime(plansDir, contextDir);
+    }
+}
 
 type AppVariables = {
     requestId: string;
@@ -603,9 +647,10 @@ function createMcpServer(plansDir: string, contextDir: string, sessionId: string
             const cloudRuntimeStartedAt = Date.now();
             const context = {
                 ...(await (async () => {
-                    const cloudRuntime = await createCloudRuntime(
+                    const cloudRuntime = await createCloudRuntimeCompat(
                         { cloud: config.cloud } as any,
                         plansDir,
+                        contextDir,
                         {
                             debug: (event, details) => {
                                 debugLog(debugEnabled, `cloud.${event}`, {
@@ -811,9 +856,10 @@ function createMcpServer(plansDir: string, contextDir: string, sessionId: string
             }
 
             const cloudRuntimeStartedAt = Date.now();
-            const cloudRuntime = await createCloudRuntime(
+            const cloudRuntime = await createCloudRuntimeCompat(
                 { cloud: config.cloud } as any,
                 plansDir,
+                contextDir,
                 {
                     debug: (event, details) => {
                         debugLog(debugEnabled, `cloud.${event}`, {
