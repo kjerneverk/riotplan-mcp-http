@@ -1,0 +1,77 @@
+name: Deploy Documentation to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest-8-cores
+    outputs:
+      has_docs: ${{ steps.docs-check.outputs.has_docs }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for docs project
+        id: docs-check
+        run: |
+          if [ -f docs/package.json ]; then
+            echo "has_docs=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_docs=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Node.js
+        if: steps.docs-check.outputs.has_docs == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install dependencies
+        if: steps.docs-check.outputs.has_docs == 'true'
+        run: npm install
+
+      - name: Build library
+        if: steps.docs-check.outputs.has_docs == 'true'
+        run: npm run build
+
+      - name: Setup Pages
+        if: steps.docs-check.outputs.has_docs == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: Build documentation site
+        if: steps.docs-check.outputs.has_docs == 'true'
+        run: |
+          cd docs
+          npm install
+          cp ../README.md public/
+          npm run build
+
+      - name: Upload artifact
+        if: steps.docs-check.outputs.has_docs == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./docs/dist
+
+  deploy:
+    if: needs.build.outputs.has_docs == 'true'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest-8-cores
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
