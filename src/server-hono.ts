@@ -154,9 +154,9 @@ async function createCloudRuntimeCompat(
     hooks?: { debug?: (event: string, details?: Record<string, unknown>) => void }
 ): Promise<CloudRuntimeLike> {
     try {
-        const mod = await import('@kjerneverk/riotplan/cloud/runtime');
+        const mod = await import('@kjerneverk/riotplan-cloud');
         const runtime = await mod.createCloudRuntime(rawConfig as any, plansDir, hooks as any);
-        return runtime as CloudRuntimeLike;
+        return runtime as unknown as CloudRuntimeLike;
     } catch {
         return createDisabledCloudRuntime(plansDir, contextDir);
     }

@@ -9,8 +9,21 @@
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveDirectory, formatError, createSuccess } from './shared.js';
-import { extractConstraints, extractQuestions, extractSelectedApproach } from '@kjerneverk/riotplan/ai/artifacts';
-import { readIdeaDoc, readShapingDoc, readPlanDoc, readEvidenceRecords, readTimelineEvents, readPlanIdentity } from '@kjerneverk/riotplan';
+import {
+    extractConstraints,
+    extractQuestions,
+    extractSelectedApproach,
+} from '@kjerneverk/riotplan-ai';
+import {
+    readIdeaDoc,
+    readShapingDoc,
+    readPlanDoc,
+    readEvidenceRecords,
+    readTimelineEvents,
+    readPlanIdentity,
+    type EvidenceEntry,
+    type TimelineEventEntry,
+} from '@kjerneverk/riotplan';
 
 interface EvidenceFile {
     name: string;
@@ -148,7 +161,7 @@ async function executeReadContext(
                 }
                 : null,
             evidence: {
-                files: evidenceRecords.map((record) => ({
+                files: evidenceRecords.map((record: EvidenceEntry) => ({
                     name: record.id,
                     title: record.description || extractEvidenceTitle(record.id, record.content || record.summary || ''),
                     preview: depth === 'full' ? getPreview(record.content || record.summary || '', 10) : '',
@@ -158,7 +171,7 @@ async function executeReadContext(
                 count: evidenceRecords.length,
             },
             history: {
-                recentEvents: timelineEvents.map((event) => ({
+                recentEvents: timelineEvents.map((event: TimelineEventEntry) => ({
                     type: event.type,
                     timestamp: event.timestamp,
                     summary: JSON.stringify(event.data),

@@ -8,8 +8,8 @@ import { join } from "node:path";
 import { stat } from "node:fs/promises";
 import { assertNoClientDirectoryOverride, formatTimestamp, resolveDirectory } from "./shared.js";
 import { logEvent } from "./history.js";
-import type { EvidenceType } from "@kjerneverk/riotplan";
-import { readIdeaDoc, saveIdeaDoc } from "@kjerneverk/riotplan";
+import type { EvidenceType } from '@kjerneverk/riotplan-core';
+import { readIdeaDoc, saveIdeaDoc } from '@kjerneverk/riotplan';
 import {
     createSqliteProvider,
     formatPlanFilename,

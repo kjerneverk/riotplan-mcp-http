@@ -5,6 +5,9 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "riotplan-mcp-http": "./dist/bin-http.js"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -16,7 +19,7 @@
   },
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "echo \"MCP HTTP extraction in progress\"",
+    "build": "tsc -p tsconfig.json",
     "test": "echo \"No standalone tests yet\"",
     "test:coverage": "npm run test",
     "lint": "echo \"No standalone lint yet\"",
@@ -39,14 +42,27 @@
     "@fjell/logging": "^4.4.72",
     "@hono/mcp": "^0.2.4",
     "@hono/node-server": "^1.19.11",
+    "@redaksjon/context": "^0.0.11",
     "@kjerneverk/riotplan": "^1.0.26-dev.0",
+    "@kjerneverk/riotplan-ai": "^1.0.0",
+    "@kjerneverk/riotplan-catalyst": "^1.0.6",
+    "@kjerneverk/riotplan-cloud": "^1.0.0",
+    "@kjerneverk/riotplan-core": "^1.0.26",
     "@kjerneverk/riotplan-format": "^1.0.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@utilarium/cardigantime": "^0.0.27",
+    "better-sqlite3": "^12.6.2",
     "commander": "^14.0.3",
     "hono": "^4.12.8",
+    "js-yaml": "^4.1.1",
     "yaml": "^2.8.2",
     "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^24.10.9",
+    "typescript": "^5.8.3"
   },
   "publishConfig": {
     "tag": "dev"

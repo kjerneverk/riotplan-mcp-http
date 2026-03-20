@@ -13,7 +13,7 @@ import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { createSqliteProvider } from '@kjerneverk/riotplan-format';
 import { executeCreate } from './create.js';
 import { assertNoClientDirectoryOverride } from './shared.js';
-import { getPlanCategory, type PlanCategory } from '@kjerneverk/riotplan/plan/category';
+import { getPlanCategory, type PlanCategory } from '@kjerneverk/riotplan';
 import {
     getProjectMatchKeys,
     getWorkspaceMatchKeys,

@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import Logging from '@fjell/logging';
 import { createSqliteProvider } from '@kjerneverk/riotplan-format';
 import { readProjectBinding, type ProjectBinding } from './project-binding-shared.js';
-import { getPlanCategory, type PlanCategory } from '@kjerneverk/riotplan/plan/category';
+import { getPlanCategory, type PlanCategory } from '@kjerneverk/riotplan';
 
 const logger = Logging.getLogger('@kjerneverk/riotplan-http').get('plan-index');
 const INDEX_SCHEMA_VERSION = 1;

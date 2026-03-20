@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveDirectory, formatError, createSuccess } from './shared.js';
-import { loadConfig, loadConfiguredCatalysts } from '@kjerneverk/riotplan/config';
+import { loadConfig, loadConfiguredCatalysts } from '@kjerneverk/riotplan';
 import { loadCatalystSafe } from '@kjerneverk/riotplan-catalyst';
 import { readPlanManifest, addCatalystToManifest, removeCatalystFromManifest } from '@kjerneverk/riotplan-catalyst';
 

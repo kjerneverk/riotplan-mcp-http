@@ -265,7 +265,7 @@ export async function shapingCompare(args: z.infer<typeof ShapingCompareSchema>)
     }
   
     let comparison = "## Approach Comparison\n\n";
-    approaches.forEach(approach => {
+    approaches.forEach((approach: string) => {
         const name = approach.replace("### Approach: ", "");
         comparison += `**${name}**\n`;
     

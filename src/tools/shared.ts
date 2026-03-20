@@ -3,11 +3,20 @@
  */
 
 import { resolve, join, basename, relative, isAbsolute, dirname } from 'node:path';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import type { ToolResult, ToolExecutionContext } from '../types.js';
 
 const CLIENT_DIRECTORY_OVERRIDE_KEYS = ['directory', 'path', 'root', 'planDirectory'] as const;
 const CLIENT_DIRECTORY_OVERRIDE_ERROR = 'E_INVALID_ARGUMENT: directory is server-managed and cannot be provided by client';
+
+function toCanonicalPath(path: string): string {
+    const resolved = resolve(path);
+    try {
+        return realpathSync(resolved);
+    } catch {
+        return resolved;
+    }
+}
 
 export function formatTimestamp(): string {
     return new Date().toISOString();
@@ -32,6 +41,7 @@ export function formatDate(): string {
  * @returns Resolved absolute path to the directory
  */
 function findPlanById(baseDir: string, planId: string, maxDepth = 4): string | null {
+    const root = resolve(baseDir);
     const normalized = planId.trim();
     if (!normalized) return null;
     const normalizedLower = normalized.toLowerCase();
@@ -50,11 +60,11 @@ function findPlanById(baseDir: string, planId: string, maxDepth = 4): string | n
     }
 
     const directCandidates = [
-        resolve(baseDir, `${normalized}.plan`),
-        resolve(baseDir, normalized),
-        resolve(baseDir, 'plans', normalized),
-        resolve(baseDir, 'done', normalized),
-        resolve(baseDir, 'hold', normalized),
+        resolve(root, `${normalized}.plan`),
+        resolve(root, normalized),
+        resolve(root, 'plans', normalized),
+        resolve(root, 'done', normalized),
+        resolve(root, 'hold', normalized),
     ];
 
     for (const candidate of directCandidates) {
@@ -109,23 +119,25 @@ function findPlanById(baseDir: string, planId: string, maxDepth = 4): string | n
         return null;
     }
 
-    return walk(baseDir, 0);
+    return walk(root, 0);
 }
 
 export function resolveDirectory(args: any, context: ToolExecutionContext): string {
     const rawBase = context.workingDirectory || process.cwd();
-    const base = rawBase.endsWith('.plan') ? dirname(rawBase) : rawBase;
+    const logicalBase = rawBase.endsWith('.plan') ? dirname(rawBase) : rawBase;
+    const base = toCanonicalPath(logicalBase);
     if (args.planId) {
         const resolvedById = findPlanById(base, String(args.planId));
         if (!resolvedById) {
             throw new Error(`Plan not found for planId: ${args.planId}`);
         }
-        const rel = relative(base, resolvedById);
+        const planPath = toCanonicalPath(resolvedById);
+        const rel = relative(base, planPath);
         const withinBase = rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
         if (!withinBase) {
             throw new Error(`Plan not found for planId: ${args.planId}`);
         }
-        return resolvedById;
+        return planPath;
     }
     return base;
 }
