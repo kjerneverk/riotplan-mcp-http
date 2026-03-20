@@ -73,11 +73,12 @@ Session management for multi-connection MCP server operation.
 | `@kjerneverk/riotplan-core` | Core service composition (lifecycle, status, idea, build helpers) -- used by a subset of tools |
 | `@kjerneverk/riotplan-format` | SQLite provider for direct plan file/step/timeline access |
 
-The dependency on `@kjerneverk/riotplan` is currently broad -- tools import
-from subpaths like `@kjerneverk/riotplan/ai/artifacts` and
-`@kjerneverk/riotplan/config`. A future goal is to narrow this so the MCP
-server depends only on well-defined service interfaces rather than reaching
-into riotplan internals.
+`@kjerneverk/riotplan` is a **runtime dependency** of this package (not a peer):
+installing `@kjerneverk/riotplan-mcp-http` pulls the framework in automatically.
+That dependency is currently broad — tools import from subpaths like
+`@kjerneverk/riotplan/ai/artifacts` and `@kjerneverk/riotplan/config`. A future
+goal is to narrow this so the MCP server depends only on well-defined service
+interfaces rather than reaching into riotplan internals.
 
 ## Development
 

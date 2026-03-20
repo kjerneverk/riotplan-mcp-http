@@ -5,8 +5,7 @@
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { formatError, createSuccess } from './shared.js';
-import { generatePlan } from '@kjerneverk/riotplan/ai/generator';
-import { loadProvider } from '@kjerneverk/riotplan/ai/provider-loader';
+import { generatePlan, loadProvider } from '@kjerneverk/riotplan-ai';
 
 async function executeGenerate(
     args: any,

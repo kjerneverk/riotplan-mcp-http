@@ -6,8 +6,11 @@ node_modules
 .vscode
 coverage/
 **/.DS_Store
-package-lock.json
 
 output/
 .kodrdriv*
 **/*kodrdriv*.json
+
+# deploy: local runtime dirs
+deploy/local/plans/
+deploy/local/context/

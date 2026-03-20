@@ -13,14 +13,14 @@ import { createHash } from "node:crypto";
 import { dirname, resolve, relative, normalize, isAbsolute } from "node:path";
 import { readdirSync } from "node:fs";
 import { resolveSqlitePlanPath, formatError, createSuccess } from "./shared.js";
-import { loadArtifacts } from "@kjerneverk/riotplan/ai/artifacts";
 import {
+    loadArtifacts,
     buildPlanPrompt,
     getPlanGenerationSystemPrompt,
     PLAN_GENERATION_RESPONSE_SCHEMA,
-} from "@kjerneverk/riotplan/ai/generator";
+    type GenerationContext,
+} from "@kjerneverk/riotplan-ai";
 import type { McpTool, ToolResult, ToolExecutionContext, BuildInstructionPayload } from "../types.js";
-import type { GenerationContext } from "@kjerneverk/riotplan/ai/generator";
 import { readProjectBinding, resolveProjectContext } from "./project-binding-shared.js";
 import { createSqliteProvider } from "@kjerneverk/riotplan-format";
 

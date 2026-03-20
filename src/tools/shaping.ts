@@ -3,13 +3,14 @@
  */
 
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
-import { join } from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
-import { formatTimestamp, resolveDirectory, ensurePlanManifest } from "./shared.js";
+import { formatTimestamp, resolveDirectory } from "./shared.js";
 import { logEvent } from "./history.js";
 import { transitionStage } from "./transition.js";
-import { createSqliteProvider, type PlanFile } from "@kjerneverk/riotplan-format";
+import {
+    readShapingDoc as libReadShapingDoc,
+    saveShapingDoc as libSaveShapingDoc,
+    type PlanDoc,
+} from "@kjerneverk/riotplan";
 
 // Tool schemas
 export const ShapingStartSchema = z.object({
@@ -46,89 +47,28 @@ export const ShapingSelectSchema = z.object({
     reason: z.string().describe("Reason for selecting this approach"),
 });
 
-type ShapingDoc = {
-    content: string;
-    filename: string;
-};
+type ShapingDoc = PlanDoc;
 
 async function readShapingDoc(planPath: string): Promise<ShapingDoc | null> {
-    if (!planPath.endsWith(".plan")) {
-        const shapingFile = join(planPath, "SHAPING.md");
-        try {
-            const content = await readFile(shapingFile, "utf-8");
-            return { content, filename: "SHAPING.md" };
-        } catch {
-            return null;
-        }
-    }
-
-    const provider = createSqliteProvider(planPath);
-    const filesResult = await provider.getFiles();
-    await provider.close();
-    if (!filesResult.success || !filesResult.data) {
-        return null;
-    }
-    const shapingFile = filesResult.data
-        .filter((file) => file.type === "shaping")
-        .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0];
-    if (!shapingFile) {
-        return null;
-    }
-    return { content: shapingFile.content, filename: shapingFile.filename };
+    return libReadShapingDoc(planPath);
 }
 
-async function saveShapingDoc(planPath: string, content: string, existing?: PlanFile | ShapingDoc | null): Promise<void> {
-    if (!planPath.endsWith(".plan")) {
-        await writeFile(join(planPath, "SHAPING.md"), content, "utf-8");
-        return;
-    }
-
-    const now = formatTimestamp();
-    const provider = createSqliteProvider(planPath);
-    const saveResult = await provider.saveFile({
-        type: "shaping",
-        filename: existing?.filename || "SHAPING.md",
-        content,
-        createdAt: (existing as PlanFile | undefined)?.createdAt || now,
-        updatedAt: now,
-    });
-    await provider.close();
-    if (!saveResult.success) {
-        throw new Error(saveResult.error || "Failed to save SHAPING.md content");
-    }
+async function saveShapingDoc(planPath: string, content: string): Promise<void> {
+    return libSaveShapingDoc(planPath, content);
 }
 
 async function addShapingEvent(planPath: string, type: string, data: Record<string, unknown>): Promise<void> {
-    if (!planPath.endsWith(".plan")) {
-        await logEvent(planPath, {
-            timestamp: formatTimestamp(),
-            type: type as any,
-            data,
-        });
-        return;
-    }
-    const provider = createSqliteProvider(planPath);
-    const result = await provider.addTimelineEvent({
-        id: randomUUID(),
+    await logEvent(planPath, {
         timestamp: formatTimestamp(),
         type: type as any,
         data,
     });
-    await provider.close();
-    if (!result.success) {
-        throw new Error(result.error || `Failed to add timeline event '${type}'`);
-    }
 }
 
 // Tool implementations
 
 export async function shapingStart(args: z.infer<typeof ShapingStartSchema>): Promise<string> {
     const shapingPath = args.planId || process.cwd();
-  
-    // Ensure plan has manifest
-    if (!shapingPath.endsWith(".plan")) {
-        await ensurePlanManifest(shapingPath);
-    }
   
     // Create SHAPING.md
     const shapingContent = `# Shaping: [Name]
@@ -164,7 +104,7 @@ _Decisions will be tracked here_
 **Next**: Select an approach and transition to 'built'
 `;
 
-    await saveShapingDoc(shapingPath, shapingContent, null);
+    await saveShapingDoc(shapingPath, shapingContent);
     await transitionStage(
         {
             planId: shapingPath,
@@ -221,7 +161,7 @@ export async function shapingAddApproach(args: z.infer<typeof ShapingAddApproach
   
     content = content.slice(0, insertPoint) + approach + content.slice(insertPoint);
   
-    await saveShapingDoc(shapingPath, content, shapingDoc);
+    await saveShapingDoc(shapingPath, content);
   
     // Log event
     await addShapingEvent(shapingPath, 'approach_added', {
@@ -255,7 +195,7 @@ export async function shapingAddFeedback(args: z.infer<typeof ShapingAddFeedback
     const feedback = `\n### ${formatTimestamp()}\n\n${args.feedback}\n`;
     content = content.slice(0, insertPoint) + feedback + content.slice(insertPoint);
   
-    await saveShapingDoc(shapingPath, content, shapingDoc);
+    await saveShapingDoc(shapingPath, content);
   
     // Log event
     await addShapingEvent(shapingPath, 'feedback_added', { feedback: args.feedback });
@@ -292,7 +232,7 @@ export async function shapingAddEvidence(args: z.infer<typeof ShapingAddEvidence
   
     content = content.slice(0, insertPoint) + evidence + content.slice(insertPoint);
   
-    await saveShapingDoc(shapingPath, content, shapingDoc);
+    await saveShapingDoc(shapingPath, content);
   
     // Log event
     await addShapingEvent(shapingPath, 'evidence_added', {
@@ -325,7 +265,7 @@ export async function shapingCompare(args: z.infer<typeof ShapingCompareSchema>)
     }
   
     let comparison = "## Approach Comparison\n\n";
-    approaches.forEach(approach => {
+    approaches.forEach((approach: string) => {
         const name = approach.replace("### Approach: ", "");
         comparison += `**${name}**\n`;
     
@@ -371,7 +311,7 @@ export async function shapingSelect(args: z.infer<typeof ShapingSelectSchema>): 
         const decision = `\n**Selected Approach**: ${args.approach}\n\n**Reasoning**: ${args.reason}\n\n**Selected At**: ${formatTimestamp()}\n`;
         content = content.slice(0, insertPoint) + decision + content.slice(insertPoint);
     
-        await saveShapingDoc(shapingPath, content, shapingDoc);
+        await saveShapingDoc(shapingPath, content);
     }
   
     // Log event

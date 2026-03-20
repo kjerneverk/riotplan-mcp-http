@@ -55,6 +55,14 @@ const CreateSchema = BaseSchema.extend({
         .describe('Full entity payload; entity.id should be a UUID (generated automatically when missing/invalid)'),
 });
 
+const UpsertSchema = BaseSchema.extend({
+    action: z.literal('upsert'),
+    entityType: EntityTypeSchema.describe('Entity type to upsert'),
+    entity: z
+        .record(z.string(), z.unknown())
+        .describe('Full entity payload; entity.id must be a valid UUID (required for upsert / multi-server replication)'),
+});
+
 const UpdateSchema = BaseSchema.extend({
     action: z.literal('update'),
     entityType: EntityTypeSchema.describe('Entity type to update'),
@@ -72,6 +80,7 @@ const ActionSchema = z.discriminatedUnion('action', [
     ListSchema,
     GetSchema,
     CreateSchema,
+    UpsertSchema,
     UpdateSchema,
     DeleteSchema,
 ]);
@@ -134,7 +143,7 @@ function listEntitiesByType(ctx: ContextInstance, entityType: EntityType, includ
     switch (entityType) {
         case 'project': {
             const projects = ctx.getAllProjects();
-            return includeInactive ? projects : projects.filter((p) => p.active !== false);
+            return includeInactive ? projects : projects.filter((p: { active?: boolean }) => p.active !== false);
         }
     }
 }
@@ -218,6 +227,30 @@ async function executeContextEntity(args: Record<string, any>, context: ToolExec
             });
         }
 
+        if (validated.action === 'upsert') {
+            const rawId = typeof validated.entity.id === 'string' ? validated.entity.id.trim() : '';
+            if (!isUuid(rawId)) {
+                throw new Error(`upsert requires entity.id to be a valid UUID (got "${rawId}")`);
+            }
+            const existing = getEntityByType(ctx, validated.entityType, rawId);
+            const nextEntity = {
+                ...(existing || {}),
+                ...validated.entity,
+                id: rawId,
+                type: validated.entityType,
+            };
+            await ctx.saveEntity(nextEntity as any, Boolean(existing));
+            if (validated.entityType === 'project' && indexRoot) {
+                markContextEntityIndexDirty(indexRoot, 'project');
+            }
+            return createSuccess({
+                action: validated.action,
+                entityType: validated.entityType,
+                entity: nextEntity,
+                created: !existing,
+            });
+        }
+
         if (validated.action === 'update') {
             const existing = getEntityByType(ctx, validated.entityType, validated.id);
             if (!existing) {
@@ -262,11 +295,11 @@ async function executeContextEntity(args: Record<string, any>, context: ToolExec
 export const contextEntityTool: McpTool = {
     name: 'riotplan_context',
     description:
-        'Unified context entity operations using action=list|get|create|update|delete. ' +
-        'Supports entity type: project.',
+        'Unified context entity operations using action=list|get|create|upsert|update|delete. ' +
+        'Use upsert to create-or-replace by UUID (multi-server replication). Supports entity type: project.',
     schema: {
         action: z
-            .enum(['list', 'get', 'create', 'update', 'delete'])
+            .enum(['list', 'get', 'create', 'upsert', 'update', 'delete'])
             .describe('Context operation action'),
         entityType: EntityTypeSchema.optional().describe('Entity type for action'),
         id: z.string().optional().describe('Entity id for get/update/delete'),
