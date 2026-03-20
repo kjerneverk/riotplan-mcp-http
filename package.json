@@ -1,6 +1,6 @@
 {
   "name": "@kjerneverk/riotplan-mcp-http",
-  "version": "1.0.26",
+  "version": "1.0.27-dev.0",
   "description": "HTTP MCP server package for RiotPlan",
   "type": "module",
   "main": "./dist/index.js",
