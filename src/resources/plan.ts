@@ -4,7 +4,7 @@
 
 import type { PlanResource } from '../types.js';
 import { existsSync } from 'node:fs';
-import { createSqliteProvider } from '@kjerneverk/riotplan-format';
+import { createSqliteProvider } from '@planvokter/riotplan-format';
 
 export async function readPlanResource(path: string): Promise<PlanResource> {
     const exists = existsSync(path);

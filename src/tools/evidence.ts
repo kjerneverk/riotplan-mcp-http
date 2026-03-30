@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { access, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { z } from "zod";
-import { createSqliteProvider } from "@kjerneverk/riotplan-format";
+import { createSqliteProvider } from "@planvokter/riotplan-format";
 import type { McpTool, ToolExecutionContext, ToolResult } from "../types.js";
 import { formatTimestamp, resolveDirectory } from "./shared.js";
 import { logEvent } from "./history.js";

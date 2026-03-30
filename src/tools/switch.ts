@@ -10,10 +10,10 @@ import { resolve, join, basename, dirname, sep } from 'node:path';
 import { readdirSync, statSync } from 'node:fs';
 import { mkdir, rename, access, unlink } from 'node:fs/promises';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
-import { createSqliteProvider } from '@kjerneverk/riotplan-format';
+import { createSqliteProvider } from '@planvokter/riotplan-format';
 import { executeCreate } from './create.js';
 import { assertNoClientDirectoryOverride } from './shared.js';
-import { getPlanCategory, type PlanCategory } from '@kjerneverk/riotplan';
+import { getPlanCategory, type PlanCategory } from '@planvokter/riotplan';
 import {
     getProjectMatchKeys,
     getWorkspaceMatchKeys,

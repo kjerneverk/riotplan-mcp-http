@@ -1,4 +1,4 @@
-# @kjerneverk/riotplan-mcp-http
+# @planvokter/riotplan-mcp-http
 
 HTTP MCP server for RiotPlan.
 
@@ -69,14 +69,14 @@ Session management for multi-connection MCP server operation.
 
 | Package | Role |
 |---|---|
-| `@kjerneverk/riotplan` | Plan operations, types, AI artifact loading, config, status generation, step mutations, reflection writer, plan loader, plan categories |
-| `@kjerneverk/riotplan-core` | Core service composition (lifecycle, status, idea, build helpers) -- used by a subset of tools |
-| `@kjerneverk/riotplan-format` | SQLite provider for direct plan file/step/timeline access |
+| `@planvokter/riotplan` | Plan operations, types, AI artifact loading, config, status generation, step mutations, reflection writer, plan loader, plan categories |
+| `@planvokter/riotplan-core` | Core service composition (lifecycle, status, idea, build helpers) -- used by a subset of tools |
+| `@planvokter/riotplan-format` | SQLite provider for direct plan file/step/timeline access |
 
-`@kjerneverk/riotplan` is a **runtime dependency** of this package (not a peer):
-installing `@kjerneverk/riotplan-mcp-http` pulls the framework in automatically.
+`@planvokter/riotplan` is a **runtime dependency** of this package (not a peer):
+installing `@planvokter/riotplan-mcp-http` pulls the framework in automatically.
 That dependency is currently broad — tools import from subpaths like
-`@kjerneverk/riotplan/ai/artifacts` and `@kjerneverk/riotplan/config`. A future
+`@planvokter/riotplan/ai/artifacts` and `@planvokter/riotplan/config`. A future
 goal is to narrow this so the MCP server depends only on well-defined service
 interfaces rather than reaching into riotplan internals.
 
@@ -87,7 +87,7 @@ During development, use `npm link` to resolve sibling packages:
 ```bash
 cd ../riotplan && npm link
 cd ../riotplan-core && npm link
-cd ../riotplan-mcp-http && npm link @kjerneverk/riotplan @kjerneverk/riotplan-core @kjerneverk/riotplan-format
+cd ../riotplan-mcp-http && npm link @planvokter/riotplan @planvokter/riotplan-core @planvokter/riotplan-format
 ```
 
 ## Status

@@ -4,7 +4,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import * as yaml from 'js-yaml';
 import Logging from '@fjell/logging';
 
-const logger = Logging.getLogger('@kjerneverk/riotplan-http').get('context-entity-index');
+const logger = Logging.getLogger('@planvokter/riotplan-http').get('context-entity-index');
 const INDEX_SCHEMA_VERSION = 1;
 const INDEX_PATH = '.riotplan/context-entities-index-v1.json';
 const REFRESH_TTL_MS = 5_000;

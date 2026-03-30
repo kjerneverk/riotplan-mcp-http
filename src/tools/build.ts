@@ -19,10 +19,10 @@ import {
     getPlanGenerationSystemPrompt,
     PLAN_GENERATION_RESPONSE_SCHEMA,
     type GenerationContext,
-} from "@kjerneverk/riotplan-ai";
+} from "@planvokter/riotplan-ai";
 import type { McpTool, ToolResult, ToolExecutionContext, BuildInstructionPayload } from "../types.js";
 import { readProjectBinding, resolveProjectContext } from "./project-binding-shared.js";
-import { createSqliteProvider } from "@kjerneverk/riotplan-format";
+import { createSqliteProvider } from "@planvokter/riotplan-format";
 
 /**
  * Project root indicator files (language-agnostic).

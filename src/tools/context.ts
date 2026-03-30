@@ -13,7 +13,7 @@ import {
     extractConstraints,
     extractQuestions,
     extractSelectedApproach,
-} from '@kjerneverk/riotplan-ai';
+} from '@planvokter/riotplan-ai';
 import {
     readIdeaDoc,
     readShapingDoc,
@@ -23,7 +23,7 @@ import {
     readPlanIdentity,
     type EvidenceEntry,
     type TimelineEventEntry,
-} from '@kjerneverk/riotplan';
+} from '@planvokter/riotplan';
 
 interface EvidenceFile {
     name: string;

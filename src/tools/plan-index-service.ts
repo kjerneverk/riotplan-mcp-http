@@ -2,11 +2,11 @@ import { basename, join } from 'node:path';
 import type { Dirent } from 'node:fs';
 import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import Logging from '@fjell/logging';
-import { createSqliteProvider } from '@kjerneverk/riotplan-format';
+import { createSqliteProvider } from '@planvokter/riotplan-format';
 import { readProjectBinding, type ProjectBinding } from './project-binding-shared.js';
-import { getPlanCategory, type PlanCategory } from '@kjerneverk/riotplan';
+import { getPlanCategory, type PlanCategory } from '@planvokter/riotplan';
 
-const logger = Logging.getLogger('@kjerneverk/riotplan-http').get('plan-index');
+const logger = Logging.getLogger('@planvokter/riotplan-http').get('plan-index');
 const INDEX_SCHEMA_VERSION = 1;
 const DEFAULT_INDEX_PATH = '.riotplan/plans-index-v1.json';
 

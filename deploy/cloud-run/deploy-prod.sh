@@ -42,7 +42,7 @@ grant_bucket_access() {
       --quiet
 }
 
-echo "Deploying @kjerneverk/riotplan-mcp-http version: ${RIOTPLAN_MCP_HTTP_VERSION}"
+echo "Deploying @planvokter/riotplan-mcp-http version: ${RIOTPLAN_MCP_HTTP_VERSION}"
 echo "Project: ${PROJECT_ID}, Region: ${REGION}, Service: ${SERVICE_NAME}"
 echo "Env file: ${ENV_FILE}"
 echo "Cloud Run timeout: ${REQUEST_TIMEOUT}s, min instances: ${MIN_INSTANCES}, CPU: always allocated"

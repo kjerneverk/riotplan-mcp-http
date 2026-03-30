@@ -6,7 +6,7 @@
 
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createSqliteProvider } from '@kjerneverk/riotplan-format';
+import { createSqliteProvider } from '@planvokter/riotplan-format';
 
 export async function readCheckpointsListResource(planPath: string): Promise<any> {
     if (planPath.endsWith('.plan')) {

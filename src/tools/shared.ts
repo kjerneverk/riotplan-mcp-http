@@ -219,7 +219,7 @@ export async function ensurePlanManifest(
     options?: { id?: string; title?: string; catalysts?: string[] }
 ): Promise<boolean> {
     try {
-        const { readPlanManifest, writePlanManifest } = await import('@kjerneverk/riotplan-catalyst');
+        const { readPlanManifest, writePlanManifest } = await import('@planvokter/riotplan-catalyst');
         
         const existing = await readPlanManifest(planPath);
         if (existing) {
@@ -254,7 +254,7 @@ export async function isIdeaOrShapingDirectory(path: string): Promise<{
     stage?: string;
 }> {
     try {
-        const { createSqliteProvider } = await import('@kjerneverk/riotplan-format');
+        const { createSqliteProvider } = await import('@planvokter/riotplan-format');
         const provider = createSqliteProvider(path);
         const metadataResult = await provider.getMetadata();
         const stage = metadataResult.data?.stage;

@@ -6,10 +6,10 @@
 
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { createSqliteProvider } from "@kjerneverk/riotplan-format";
+import { createSqliteProvider } from "@planvokter/riotplan-format";
 import type { McpTool, ToolResult, ToolExecutionContext } from "../types.js";
 import { resolveSqlitePlanPath, formatError, createSuccess } from "./shared.js";
-import { loadArtifacts } from "@kjerneverk/riotplan-ai";
+import { loadArtifacts } from "@planvokter/riotplan-ai";
 import { transitionStage } from "./transition.js";
 
 const ArtifactTypeSchema = z.enum(["summary", "execution_plan", "status", "provenance"]);

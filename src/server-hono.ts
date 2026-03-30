@@ -105,7 +105,7 @@ interface SessionContext {
  */
 const sessions = new Map<string, SessionContext>();
 const TRUTHY_RE = /^(1|true|yes|on)$/i;
-const HttpLogger = Logging.getLogger('@kjerneverk/riotplan-http');
+const HttpLogger = Logging.getLogger('@planvokter/riotplan-http');
 const logger = HttpLogger.get('server');
 const requestLogger = HttpLogger.get('request');
 const toolLogger = HttpLogger.get('tool');
@@ -154,7 +154,7 @@ async function createCloudRuntimeCompat(
     hooks?: { debug?: (event: string, details?: Record<string, unknown>) => void }
 ): Promise<CloudRuntimeLike> {
     try {
-        const mod = await import('@kjerneverk/riotplan-cloud');
+        const mod = await import('@planvokter/riotplan-cloud');
         const runtime = await mod.createCloudRuntime(rawConfig as any, plansDir, hooks as any);
         return runtime as unknown as CloudRuntimeLike;
     } catch {

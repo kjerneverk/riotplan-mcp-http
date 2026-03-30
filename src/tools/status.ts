@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveDirectory, formatError, createSuccess } from './shared.js';
-import { loadPlan } from '@kjerneverk/riotplan';
+import { loadPlan } from '@planvokter/riotplan';
 
 async function executeStatus(
     args: any,

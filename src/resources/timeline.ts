@@ -6,7 +6,7 @@
 
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createSqliteProvider } from '@kjerneverk/riotplan-format';
+import { createSqliteProvider } from '@planvokter/riotplan-format';
 
 export async function readTimelineResource(planPath: string): Promise<any> {
     if (planPath.endsWith('.plan')) {
