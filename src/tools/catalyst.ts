@@ -5,9 +5,9 @@
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveDirectory, formatError, createSuccess } from './shared.js';
-import { loadConfig, loadConfiguredCatalysts } from '@kjerneverk/riotplan';
-import { loadCatalystSafe } from '@kjerneverk/riotplan-catalyst';
-import { readPlanManifest, addCatalystToManifest, removeCatalystFromManifest } from '@kjerneverk/riotplan-catalyst';
+import { loadConfig, loadConfiguredCatalysts } from '@planvokter/riotplan';
+import { loadCatalystSafe } from '@planvokter/riotplan-catalyst';
+import { readPlanManifest, addCatalystToManifest, removeCatalystFromManifest } from '@planvokter/riotplan-catalyst';
 
 // ============================================================================
 // catalyst list action
@@ -174,7 +174,7 @@ async function executeCatalystAssociate(
             const manifest = await readPlanManifest(planPath);
             if (manifest) {
                 manifest.catalysts = catalystIds;
-                const { writePlanManifest } = await import('@kjerneverk/riotplan-catalyst');
+                const { writePlanManifest } = await import('@planvokter/riotplan-catalyst');
                 await writePlanManifest(planPath, manifest);
                 updatedCatalysts = catalystIds;
             }

@@ -5,9 +5,9 @@
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveDirectory, formatError, createSuccess } from './shared.js';
-import { loadPlan, insertStep, removeStep, moveStep, saveStatusDoc, generateStatus } from '@kjerneverk/riotplan';
+import { loadPlan, insertStep, removeStep, moveStep, saveStatusDoc, generateStatus } from '@planvokter/riotplan';
 import { randomUUID } from 'node:crypto';
-import { createSqliteProvider } from '@kjerneverk/riotplan-format';
+import { createSqliteProvider } from '@planvokter/riotplan-format';
 
 function generateSqliteStatusMarkdown(planName: string, steps: Array<{
     number: number;

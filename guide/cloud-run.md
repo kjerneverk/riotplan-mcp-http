@@ -1,6 +1,6 @@
 # Cloud Run Deployment Template
 
-This template deploys RiotPlan MCP HTTP (`@kjerneverk/riotplan-mcp-http`) to Google Cloud Run using Cloud Build.
+This template deploys RiotPlan MCP HTTP (`@planvokter/riotplan-mcp-http`) to Google Cloud Run using Cloud Build.
 
 Use these files:
 

@@ -2,7 +2,7 @@
  * Timeline utility functions for filtering and querying timeline events
  */
 
-import type { TimelineEvent, TimelineEventType, NarrativeChunkEvent } from '@kjerneverk/riotplan-core';
+import type { TimelineEvent, TimelineEventType, NarrativeChunkEvent } from '@planvokter/riotplan-core';
 
 /**
  * Filter timeline by event type

@@ -3,7 +3,7 @@
  */
 
 import type { StepsResource } from '../types.js';
-import { createSqliteProvider } from '@kjerneverk/riotplan-format';
+import { createSqliteProvider } from '@planvokter/riotplan-format';
 
 export async function readStepsResource(path: string): Promise<StepsResource> {
     try {

@@ -5,8 +5,8 @@
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveDirectory, formatError, createSuccess } from './shared.js';
-import { writeStepReflection } from '@kjerneverk/riotplan';
-import { createSqliteProvider } from '@kjerneverk/riotplan-format';
+import { writeStepReflection } from '@planvokter/riotplan';
+import { createSqliteProvider } from '@planvokter/riotplan-format';
 import { logEvent } from './history.js';
 
 function buildReflectionExcerpt(reflection: string, maxLength = 200): string {

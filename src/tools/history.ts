@@ -6,8 +6,8 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { formatTimestamp, resolveDirectory } from "./shared.js";
 import type { ToolResult, ToolExecutionContext } from '../types.js';
-import type { TimelineEvent, CheckpointMetadata } from '@kjerneverk/riotplan-core';
-import { createSqliteProvider } from "@kjerneverk/riotplan-format";
+import type { TimelineEvent, CheckpointMetadata } from '@planvokter/riotplan-core';
+import { createSqliteProvider } from "@planvokter/riotplan-format";
 
 // Re-export for backward compatibility
 export type HistoryEvent = TimelineEvent;

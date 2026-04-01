@@ -3,7 +3,7 @@
  */
 
 import type { StatusResource } from '../types.js';
-import { createSqliteProvider } from '@kjerneverk/riotplan-format';
+import { createSqliteProvider } from '@planvokter/riotplan-format';
 
 export async function readStatusResource(path: string): Promise<StatusResource> {
     try {

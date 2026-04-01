@@ -6,7 +6,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { formatTimestamp, resolveDirectory, formatError, createSuccess } from "./shared.js";
 import type { McpTool, ToolResult, ToolExecutionContext } from "../types.js";
-import { createSqliteProvider } from "@kjerneverk/riotplan-format";
+import { createSqliteProvider } from "@planvokter/riotplan-format";
 
 // Tool schema
 export const TransitionSchema = z.object({

@@ -8,7 +8,9 @@ coverage/
 **/.DS_Store
 
 output/
-.kodrdriv*
+package-lock.json
+.kodrdriv/*
+!.kodrdriv/config.yaml
 **/*kodrdriv*.json
 
 # deploy: local runtime dirs

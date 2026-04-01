@@ -12,7 +12,7 @@ import {
     generatePlanUuid,
     type PlanMetadata as SqlitePlanMetadata,
     type PlanStep as SqlitePlanStep,
-} from '@kjerneverk/riotplan-format';
+} from '@planvokter/riotplan-format';
 
 function buildInitialSteps(count: number): SqlitePlanStep[] {
     const defaults = [

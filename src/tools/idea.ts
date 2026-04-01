@@ -8,15 +8,15 @@ import { join } from "node:path";
 import { stat } from "node:fs/promises";
 import { assertNoClientDirectoryOverride, formatTimestamp, resolveDirectory } from "./shared.js";
 import { logEvent } from "./history.js";
-import type { EvidenceType } from '@kjerneverk/riotplan-core';
-import { readIdeaDoc, saveIdeaDoc } from '@kjerneverk/riotplan';
+import type { EvidenceType } from '@planvokter/riotplan-core';
+import { readIdeaDoc, saveIdeaDoc } from '@planvokter/riotplan';
 import {
     createSqliteProvider,
     formatPlanFilename,
     generatePlanUuid,
     type PlanFile,
     type PlanFileType,
-} from "@kjerneverk/riotplan-format";
+} from "@planvokter/riotplan-format";
 
 /**
  * Generate a descriptive filename for evidence based on description and type

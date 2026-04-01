@@ -94,7 +94,7 @@ function resolvePort(configPort: number | undefined): number {
 }
 
 function configureHttpLogLevel(debug: boolean): void {
-    const packageName = '@kjerneverk/riotplan-http';
+    const packageName = '@planvokter/riotplan-http';
     const logLevel = debug ? 'DEBUG' : 'INFO';
     let parsed: Record<string, unknown> = {};
     const raw = process.env.LOGGING_CONFIG;

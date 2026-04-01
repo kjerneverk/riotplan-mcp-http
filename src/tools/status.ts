@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveDirectory, formatError, createSuccess } from './shared.js';
-import { loadPlan } from '@kjerneverk/riotplan';
+import { loadPlan } from '@planvokter/riotplan';
 
 async function executeStatus(
     args: any,
@@ -16,15 +16,25 @@ async function executeStatus(
 
         const plan = await loadPlan(planPath);
 
-        const completed = plan.steps.filter(s => s.status === 'completed').length;
+        const completed = plan.steps.filter(
+            s => s.status === 'completed' || s.status === 'skipped'
+        ).length;
         const total = plan.steps.length;
         const percentage = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+        const hasInProgress = plan.steps.some(s => s.status === 'in_progress');
+        let operationalStatus = plan.state.status;
+        if (total > 0 && completed === total) {
+            operationalStatus = 'completed';
+        } else if (hasInProgress || completed > 0) {
+            operationalStatus = 'in_progress';
+        }
 
         const statusData: any = {
             planId: plan.metadata.code,
             code: plan.metadata.code,
             name: plan.metadata.name,
-            status: plan.state.status,
+            status: operationalStatus,
             currentStep: plan.state.currentStep,
             lastCompleted: plan.state.lastCompletedStep,
             progress: { completed, total, percentage },

@@ -5,7 +5,7 @@
 import { z } from 'zod';
 import type { McpTool, ToolResult, ToolExecutionContext } from '../types.js';
 import { resolveSqlitePlanPath, formatError, createSuccess } from './shared.js';
-import { createSqliteProvider } from '@kjerneverk/riotplan-format';
+import { createSqliteProvider } from '@planvokter/riotplan-format';
 
 async function executeValidate(
     args: any,

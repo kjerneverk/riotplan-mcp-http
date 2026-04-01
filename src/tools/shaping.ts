@@ -10,7 +10,7 @@ import {
     readShapingDoc as libReadShapingDoc,
     saveShapingDoc as libSaveShapingDoc,
     type PlanDoc,
-} from "@kjerneverk/riotplan";
+} from "@planvokter/riotplan";
 
 // Tool schemas
 export const ShapingStartSchema = z.object({
